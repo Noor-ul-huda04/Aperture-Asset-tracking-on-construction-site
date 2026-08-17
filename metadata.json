@@ -1,0 +1,6 @@
+{
+  "name": "Aperture Construction Asset Tracking",
+  "description": "Enterprise RFID Physical Asset Tracking & Site Management System for Construction",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

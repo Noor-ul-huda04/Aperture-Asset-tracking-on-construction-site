@@ -1,0 +1,238 @@
+{
+  "entities": {
+    "Asset": {
+      "title": "Asset",
+      "description": "Industrial and construction equipment asset tagged with UHF RFID",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "serialNumber": { "type": "string" },
+        "tagEpc": { "type": "string" },
+        "siteId": { "type": "string" },
+        "siteName": { "type": "string" },
+        "zoneId": { "type": "string" },
+        "zoneName": { "type": "string" },
+        "rssi": { "type": "number" },
+        "status": { "type": "string", "enum": ["In Zone", "Checked Out", "In Transit", "Maintenance", "Missing"] },
+        "cost": { "type": "number" },
+        "purchaseDate": { "type": "string" },
+        "isRental": { "type": "boolean" },
+        "rentalCostPerDay": { "type": "number" },
+        "photoUrl": { "type": "string" },
+        "modelNumber": { "type": "string" },
+        "manufacturer": { "type": "string" },
+        "lastScanTimestamp": { "type": "string" }
+      },
+      "required": ["id", "name", "tagEpc", "siteId", "status"]
+    },
+    "Site": {
+      "title": "Site",
+      "description": "Physical site or facility location",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "code": { "type": "string" },
+        "address": { "type": "string" },
+        "geoLat": { "type": "number" },
+        "geoLng": { "type": "number" },
+        "activeReaderCount": { "type": "number" },
+        "activeAssetCount": { "type": "number" }
+      },
+      "required": ["id", "name", "code"]
+    },
+    "Checkout": {
+      "title": "Checkout",
+      "description": "Equipment custody checkout record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "assetId": { "type": "string" },
+        "assetName": { "type": "string" },
+        "tagEpc": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "badgeId": { "type": "string" },
+        "jobId": { "type": "string" },
+        "checkoutTime": { "type": "string" },
+        "expectedReturn": { "type": "string" },
+        "actualReturn": { "type": "string" },
+        "status": { "type": "string", "enum": ["ACTIVE", "RETURNED", "OVERDUE"] },
+        "conditionOnReturn": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "required": ["id", "assetId", "userId", "status"]
+    },
+    "Alert": {
+      "title": "Alert",
+      "description": "Geofence security or status alert",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string" },
+        "severity": { "type": "string", "enum": ["INFO", "WARNING", "CRITICAL"] },
+        "assetId": { "type": "string" },
+        "assetName": { "type": "string" },
+        "siteId": { "type": "string" },
+        "siteName": { "type": "string" },
+        "message": { "type": "string" },
+        "triggeredAt": { "type": "string" },
+        "resolved": { "type": "boolean" },
+        "resolvedBy": { "type": "string" },
+        "resolvedAt": { "type": "string" }
+      },
+      "required": ["id", "type", "severity", "message"]
+    },
+    "ReadEvent": {
+      "title": "ReadEvent",
+      "description": "Raw RFID tag scan event",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "tagEpc": { "type": "string" },
+        "assetId": { "type": "string" },
+        "assetName": { "type": "string" },
+        "readerId": { "type": "string" },
+        "readerName": { "type": "string" },
+        "siteId": { "type": "string" },
+        "siteName": { "type": "string" },
+        "zoneId": { "type": "string" },
+        "zoneName": { "type": "string" },
+        "rssi": { "type": "number" },
+        "antennaPort": { "type": "number" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "tagEpc", "readerId", "timestamp"]
+    },
+    "MaintenanceLog": {
+      "title": "MaintenanceLog",
+      "description": "Equipment maintenance work order record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "workOrderId": { "type": "string" },
+        "assetId": { "type": "string" },
+        "assetName": { "type": "string" },
+        "type": { "type": "string" },
+        "technician": { "type": "string" },
+        "date": { "type": "string" },
+        "scheduledDate": { "type": "string" },
+        "cost": { "type": "number" },
+        "notes": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "workOrderId", "assetId", "type"]
+    },
+    "InventoryItem": {
+      "title": "InventoryItem",
+      "description": "Bulk consumable inventory item",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "siteId": { "type": "string" },
+        "siteName": { "type": "string" },
+        "quantityOnHand": { "type": "number" },
+        "minThreshold": { "type": "number" },
+        "unit": { "type": "string" },
+        "costPerUnit": { "type": "number" },
+        "lastCounted": { "type": "string" }
+      },
+      "required": ["id", "name", "quantityOnHand"]
+    },
+    "Reader": {
+      "title": "Reader",
+      "description": "UHF RFID Gateway Reader hardware",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "siteId": { "type": "string" },
+        "siteName": { "type": "string" },
+        "zoneId": { "type": "string" },
+        "zoneName": { "type": "string" },
+        "ipAddress": { "type": "string" },
+        "status": { "type": "string" },
+        "antennaPowerDbm": { "type": "number" },
+        "readCountTotal": { "type": "number" },
+        "firmwareVersion": { "type": "string" },
+        "bufferedEventsCount": { "type": "number" }
+      },
+      "required": ["id", "name", "siteId"]
+    },
+    "User": {
+      "title": "User",
+      "description": "User profile and permissions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string" },
+        "badgeId": { "type": "string" },
+        "avatarUrl": { "type": "string" },
+        "phone": { "type": "string" }
+      },
+      "required": ["id", "name", "email"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Immutable system audit trail log",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "action": { "type": "string" },
+        "entityName": { "type": "string" },
+        "userName": { "type": "string" },
+        "details": { "type": "string" }
+      },
+      "required": ["id", "timestamp", "action"]
+    }
+  },
+  "firestore": {
+    "/assets/{assetId}": {
+      "schema": { "$ref": "#/entities/Asset" },
+      "description": "Asset equipment records"
+    },
+    "/sites/{siteId}": {
+      "schema": { "$ref": "#/entities/Site" },
+      "description": "Site facility records"
+    },
+    "/checkouts/{checkoutId}": {
+      "schema": { "$ref": "#/entities/Checkout" },
+      "description": "Custody loan records"
+    },
+    "/alerts/{alertId}": {
+      "schema": { "$ref": "#/entities/Alert" },
+      "description": "Security alerts"
+    },
+    "/readEvents/{eventId}": {
+      "schema": { "$ref": "#/entities/ReadEvent" },
+      "description": "Raw RFID scan logs"
+    },
+    "/maintenanceLogs/{maintenanceId}": {
+      "schema": { "$ref": "#/entities/MaintenanceLog" },
+      "description": "Maintenance work orders"
+    },
+    "/inventory/{inventoryId}": {
+      "schema": { "$ref": "#/entities/InventoryItem" },
+      "description": "Bulk consumable supplies"
+    },
+    "/readers/{readerId}": {
+      "schema": { "$ref": "#/entities/Reader" },
+      "description": "RFID readers"
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User accounts"
+    },
+    "/auditLogs/{auditId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "System audit logs"
+    }
+  }
+}
