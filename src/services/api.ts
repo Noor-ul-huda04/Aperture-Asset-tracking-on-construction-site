@@ -5,10 +5,18 @@ import { Asset, Checkout, Alert, ReadEvent, MaintenanceLog, Reader, Site, Invent
  * Strict Architecture: Frontend -> Backend API (/api/*) -> MongoDB Atlas
  */
 
-export const API_BASE_URL = (
-  import.meta.env?.VITE_API_BASE_URL || 
-  'https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app'
-).replace(/\/$/, '').replace(/\/api$/, '');
+const getApiBaseUrl = (): string => {
+  const envUrl = import.meta.env?.VITE_API_BASE_URL;
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim() && !envUrl.includes('pstmn') && !envUrl.includes('mock')) {
+    return envUrl.replace(/\/$/, '').replace(/\/api$/, '');
+  }
+  if (typeof window !== 'undefined' && window.location && window.location.origin) {
+    return window.location.origin.replace(/\/$/, '').replace(/\/api$/, '');
+  }
+  return '';
+};
+
+export const API_BASE_URL = getApiBaseUrl();
 
 export interface ApiLogRecord {
   id: string;

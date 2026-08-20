@@ -5,10 +5,6 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
-    define: {
-      'import.meta.env.VITE_API_BASE_URL': JSON.stringify('https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app'),
-      'process.env.VITE_API_BASE_URL': JSON.stringify('https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app')
-    },
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
