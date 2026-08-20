@@ -9,7 +9,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Pass the request directly to the Express application
     return app(req, res);
   } catch (err: any) {
-    console.error('[Vercel API Root Handler Error]', err);
+    console.error('[Vercel API Handler Error]', err);
     if (!res.headersSent) {
       return res.status(500).json({
         error: 'SERVERLESS_FUNCTION_ERROR',

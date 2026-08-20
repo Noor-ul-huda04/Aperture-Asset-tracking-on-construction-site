@@ -12,103 +12,112 @@ var isConnected = false;
 var connectionError = null;
 var lastSyncedAt = null;
 async function connectToMongoDB() {
-  let rawUri = process.env.MONGODB_URI;
-  if (!rawUri || !rawUri.trim()) {
-    console.log("[MongoDB Module] MONGODB_URI not found in environment.");
+  try {
+    let rawUri = process.env.MONGODB_URI;
+    if (!rawUri || !rawUri.trim()) {
+      console.log("[MongoDB Module] MONGODB_URI not found in environment.");
+      return {
+        db: null,
+        connected: false,
+        error: "MONGODB_URI environment variable is missing or empty. Please configure MONGODB_URI in Settings/Secrets."
+      };
+    }
+    let uri = rawUri.trim().replace(/^["']|["']$/g, "").trim();
+    if (!uri.startsWith("mongodb://") && !uri.startsWith("mongodb+srv://")) {
+      const errorMsg = `Invalid scheme: The connection string "${uri.slice(0, 20)}..." does not start with "mongodb://" or "mongodb+srv://". Please verify that your MONGODB_URI secret contains the full connection string from MongoDB Atlas (e.g. mongodb+srv://username:password@cluster0.mongodb.net/dbname).`;
+      connectionError = errorMsg;
+      return { db: null, connected: false, error: errorMsg };
+    }
+    if (client && dbInstance && isConnected) {
+      try {
+        await dbInstance.command({ ping: 1 });
+        return { db: dbInstance, connected: true, error: null };
+      } catch (_) {
+        console.warn("[MongoDB Module] Stale connection detected. Reconnecting...");
+        try {
+          await client.close();
+        } catch (e) {
+        }
+        client = null;
+        dbInstance = null;
+        isConnected = false;
+      }
+    }
+    let dbName = "aperture_asset_db";
+    try {
+      const match = uri.match(/mongodb(?:\+srv)?:\/\/[^\/]+\/([^?]+)/);
+      if (match && match[1]) {
+        dbName = match[1];
+      }
+    } catch (e) {
+    }
+    const optionsList = [
+      {
+        connectTimeoutMS: 4e3,
+        serverSelectionTimeoutMS: 4e3,
+        ignoreUndefined: true,
+        family: 4
+      },
+      {
+        connectTimeoutMS: 4e3,
+        serverSelectionTimeoutMS: 4e3,
+        ignoreUndefined: true,
+        tls: true,
+        tlsAllowInvalidCertificates: true,
+        family: 4
+      }
+    ];
+    const connectTask = async () => {
+      let lastErrMsg = "";
+      for (let attempt = 0; attempt < optionsList.length; attempt++) {
+        try {
+          if (client) {
+            try {
+              await client.close();
+            } catch (_) {
+            }
+          }
+          client = new MongoClient(uri, optionsList[attempt]);
+          await client.connect();
+          dbInstance = client.db(dbName);
+          isConnected = true;
+          connectionError = null;
+          lastSyncedAt = (/* @__PURE__ */ new Date()).toISOString();
+          console.log(`[MongoDB Module] Connected to Atlas database: ${dbName}`);
+          return { db: dbInstance, connected: true, error: null };
+        } catch (err) {
+          lastErrMsg = err?.message || String(err);
+          console.warn(`[MongoDB Module] Connection attempt ${attempt + 1} failed:`, lastErrMsg);
+        }
+      }
+      isConnected = false;
+      if (lastErrMsg.includes("SSL") || lastErrMsg.includes("tlsv1 alert") || lastErrMsg.includes("alert number 80")) {
+        connectionError = "SSL/TLS Handshake Error (SSL Alert 80): MongoDB Atlas rejected the connection. In MongoDB Atlas Dashboard -> Network Access -> Add IP Address and set 0.0.0.0/0 (Allow access from anywhere).";
+      } else if (lastErrMsg.includes("Authentication failed") || lastErrMsg.includes("bad auth")) {
+        connectionError = "Authentication Failed: Please verify user credentials in MONGODB_URI secret.";
+      } else {
+        connectionError = lastErrMsg;
+      }
+      return { db: null, connected: false, error: connectionError };
+    };
+    const timeoutGuard = new Promise((resolve) => {
+      setTimeout(() => {
+        resolve({
+          db: null,
+          connected: false,
+          error: "MongoDB Atlas connection timed out (4.5s limit reached). Ensure 0.0.0.0/0 is added in Atlas Network Access."
+        });
+      }, 4500);
+    });
+    return await Promise.race([connectTask(), timeoutGuard]);
+  } catch (globalErr) {
+    console.error("[MongoDB Module] Unexpected connection exception:", globalErr);
     return {
       db: null,
       connected: false,
-      error: "MONGODB_URI environment variable is missing or empty. Please configure MONGODB_URI in Settings/Secrets."
+      error: globalErr?.message || String(globalErr)
     };
   }
-  let uri = rawUri.trim().replace(/^["']|["']$/g, "").trim();
-  if (!uri.startsWith("mongodb://") && !uri.startsWith("mongodb+srv://")) {
-    const errorMsg = `Invalid scheme: The connection string "${uri.slice(0, 20)}..." does not start with "mongodb://" or "mongodb+srv://". Please verify that your MONGODB_URI secret contains the full connection string from MongoDB Atlas (e.g. mongodb+srv://username:password@cluster0.mongodb.net/dbname).`;
-    connectionError = errorMsg;
-    return { db: null, connected: false, error: errorMsg };
-  }
-  if (client && dbInstance && isConnected) {
-    try {
-      await dbInstance.command({ ping: 1 });
-      return { db: dbInstance, connected: true, error: null };
-    } catch (_) {
-      console.warn("[MongoDB Module] Stale connection detected. Reconnecting...");
-      try {
-        await client.close();
-      } catch (e) {
-      }
-      client = null;
-      dbInstance = null;
-      isConnected = false;
-    }
-  }
-  let dbName = "aperture_asset_db";
-  try {
-    const match = uri.match(/mongodb(?:\+srv)?:\/\/[^\/]+\/([^?]+)/);
-    if (match && match[1]) {
-      dbName = match[1];
-    }
-  } catch (e) {
-  }
-  const optionsList = [
-    {
-      connectTimeoutMS: 4e3,
-      serverSelectionTimeoutMS: 4e3,
-      ignoreUndefined: true,
-      family: 4
-    },
-    {
-      connectTimeoutMS: 4e3,
-      serverSelectionTimeoutMS: 4e3,
-      ignoreUndefined: true,
-      tls: true,
-      tlsAllowInvalidCertificates: true,
-      family: 4
-    }
-  ];
-  const connectTask = async () => {
-    let lastErrMsg = "";
-    for (let attempt = 0; attempt < optionsList.length; attempt++) {
-      try {
-        if (client) {
-          try {
-            await client.close();
-          } catch (_) {
-          }
-        }
-        client = new MongoClient(uri, optionsList[attempt]);
-        await client.connect();
-        dbInstance = client.db(dbName);
-        isConnected = true;
-        connectionError = null;
-        lastSyncedAt = (/* @__PURE__ */ new Date()).toISOString();
-        console.log(`[MongoDB Module] Connected to Atlas database: ${dbName}`);
-        return { db: dbInstance, connected: true, error: null };
-      } catch (err) {
-        lastErrMsg = err.message || String(err);
-        console.warn(`[MongoDB Module] Connection attempt ${attempt + 1} failed:`, lastErrMsg);
-      }
-    }
-    isConnected = false;
-    if (lastErrMsg.includes("SSL") || lastErrMsg.includes("tlsv1 alert") || lastErrMsg.includes("alert number 80")) {
-      connectionError = "SSL/TLS Handshake Error (SSL Alert 80): MongoDB Atlas rejected the connection. In MongoDB Atlas Dashboard -> Network Access -> Add IP Address and set 0.0.0.0/0 (Allow access from anywhere).";
-    } else if (lastErrMsg.includes("Authentication failed") || lastErrMsg.includes("bad auth")) {
-      connectionError = "Authentication Failed: Please verify user credentials in MONGODB_URI secret.";
-    } else {
-      connectionError = lastErrMsg;
-    }
-    return { db: null, connected: false, error: connectionError };
-  };
-  const timeoutGuard = new Promise((resolve) => {
-    setTimeout(() => {
-      resolve({
-        db: null,
-        connected: false,
-        error: "MongoDB Atlas connection timed out (4.5s limit reached). Ensure 0.0.0.0/0 is added in Atlas Network Access."
-      });
-    }, 4500);
-  });
-  return Promise.race([connectTask(), timeoutGuard]);
 }
 function getDb() {
   return dbInstance;
@@ -137,13 +146,13 @@ var aperturePostmanCollection = {
   "variable": [
     {
       "key": "base_url",
-      "value": "https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app",
+      "value": "{{current_domain}}",
       "type": "string",
       "description": "Publicly accessible Live Base URL of the Aperture Asset Tracking API"
     },
     {
       "key": "url",
-      "value": "https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app",
+      "value": "{{current_domain}}",
       "type": "string",
       "description": "Base URL of the Aperture Asset Tracking API"
     }
@@ -2350,10 +2359,15 @@ function getAiClient() {
 }
 var PORT = Number(process.env.PORT) || 3e3;
 async function ensureDb() {
-  let mongoDb = getDb();
-  if (mongoDb && isMongoConnected()) return mongoDb;
-  const result = await connectToMongoDB();
-  return result.db;
+  try {
+    let mongoDb = getDb();
+    if (mongoDb && isMongoConnected()) return mongoDb;
+    const result = await connectToMongoDB();
+    return result.db;
+  } catch (err) {
+    console.warn("[ensureDb] Connection error, safely falling back to in-memory store:", err);
+    return null;
+  }
 }
 var DEFAULT_SITES = [
   {
@@ -2672,7 +2686,7 @@ var db = {
     bufferedCount: 0
   },
   apiGateway: {
-    baseUrl: "https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app",
+    baseUrl: "",
     apiKey: "",
     authHeaderScheme: "Bearer Token",
     pollingIntervalSeconds: 15,
@@ -2782,6 +2796,22 @@ function setNoCacheHeaders(res) {
   res.setHeader("Surrogate-Control", "no-store");
 }
 app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+  } else {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+  }
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", req.headers["access-control-request-headers"] || "Content-Type, Authorization, X-API-Key, x-api-key, X-Firebase-AppCheck, x-firebase-appcheck, X-Requested-With, Cache-Control, Pragma, Accept");
+  res.setHeader("Access-Control-Expose-Headers", "*");
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+  next();
+});
+app.use((req, res, next) => {
   if (req.url.startsWith("/api") || req.originalUrl?.startsWith("/api") || req.path?.startsWith("/api")) {
     setNoCacheHeaders(res);
   }
@@ -2798,15 +2828,6 @@ app.use((err, req, res, next) => {
     });
   }
   next(err);
-});
-app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Firebase-AppCheck, x-firebase-appcheck");
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
-  next();
 });
 app.use((req, res, next) => {
   if (req.url.startsWith("/api")) {
@@ -4431,7 +4452,7 @@ app.all(["/api/aperture/sync", "/api/v1/aperture/sync"], async (req, res) => {
   });
 });
 async function syncAllExternalApiToMongo(options = {}) {
-  const targetUrl = options.externalUrl || db.apiGateway.baseUrl || "https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app";
+  const targetUrl = options.externalUrl || db.apiGateway.baseUrl || "";
   const targetKey = options.apiKey || db.apiGateway.apiKey;
   const wipeExisting = Boolean(options.wipeExisting);
   console.log(`[External API -> MongoDB Sync] Target URL: ${targetUrl} (Wipe existing: ${wipeExisting})`);
@@ -5049,7 +5070,8 @@ app.get(["/api/gao/read-tags", "/api/v1/rfid/tags"], (req, res) => {
 app.all(["/api/beeceptor/events", "/api/v1/beeceptor/events"], async (req, res) => {
   setNoCacheHeaders(res);
   try {
-    const targetUrl = `${(db.apiGateway?.baseUrl || "https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app").replace(/\/$/, "")}/api/events`;
+    const defaultHost = req.protocol + "://" + (req.get("host") || "localhost:3000");
+    const targetUrl = `${(db.apiGateway?.baseUrl || defaultHost).replace(/\/$/, "")}/api/events`;
     const clientApiKey = req.headers["x-api-key"] || req.headers["authorization"];
     const fetchHeaders = {
       "Accept": "application/json",
@@ -5109,8 +5131,9 @@ app.all(["/getTagsInRealTime", "/api/getTagsInRealTime", "/api/gao/getTagsInReal
 });
 app.get(["/api/settings/api-gateway", "/api/v1/settings/api-gateway"], (req, res) => {
   setNoCacheHeaders(res);
+  const hostUrl = `${req.protocol}://${req.get("host")}`;
   res.json(db.apiGateway || {
-    baseUrl: "https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app",
+    baseUrl: hostUrl,
     apiKey: "",
     authHeaderScheme: "Bearer Token",
     pollingIntervalSeconds: 5,
@@ -5122,9 +5145,10 @@ app.get(["/api/settings/api-gateway", "/api/v1/settings/api-gateway"], (req, res
 });
 app.post(["/api/settings/api-gateway", "/api/v1/settings/api-gateway"], (req, res) => {
   const { baseUrl, apiKey, authHeaderScheme, pollingIntervalSeconds, isPollingActive } = req.body;
+  const hostUrl = `${req.protocol}://${req.get("host")}`;
   db.apiGateway = {
     ...db.apiGateway,
-    baseUrl: baseUrl !== void 0 ? baseUrl : db.apiGateway?.baseUrl || "https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app",
+    baseUrl: baseUrl !== void 0 ? baseUrl : db.apiGateway?.baseUrl || hostUrl,
     apiKey: apiKey !== void 0 ? apiKey : db.apiGateway?.apiKey || "",
     authHeaderScheme: authHeaderScheme || db.apiGateway?.authHeaderScheme || "Bearer Token",
     pollingIntervalSeconds: pollingIntervalSeconds !== void 0 ? Number(pollingIntervalSeconds) : db.apiGateway?.pollingIntervalSeconds || 5,
@@ -5150,7 +5174,7 @@ app.post(["/api/gateway/test-connection", "/api/v1/gateway/test-connection"], as
     headersSent: {
       [authHeaderScheme === "Bearer Token" ? "Authorization" : "X-API-Key"]: authHeaderScheme === "Bearer Token" ? `Bearer ${apiKey ? apiKey.slice(0, 6) + "..." : "TOKEN"}` : apiKey ? apiKey.slice(0, 6) + "..." : "KEY"
     },
-    targetUrl: baseUrl || "https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app"
+    targetUrl: baseUrl || req.protocol + "://" + (req.get("host") || "localhost:3000")
   });
 });
 app.get(["/api/logs", "/api/v1/logs"], async (req, res) => {
@@ -5326,7 +5350,7 @@ app.get(["/api/assets/:id/playback", "/api/v1/assets/:id/playback"], (req, res) 
     trajectory
   });
 });
-app.get(["/api/postman/collection", "/api/v1/postman/collection", "/api/postman-collection.json"], (req, res) => {
+app.get(["/postman_collection.json", "/postman-collection.json", "/api/postman/collection", "/api/v1/postman/collection", "/api/postman-collection.json"], (req, res) => {
   setNoCacheHeaders(res);
   res.json(aperturePostmanCollection);
 });

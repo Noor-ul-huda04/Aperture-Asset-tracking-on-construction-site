@@ -2,19 +2,7 @@
   "version": 2,
   "rewrites": [
     {
-      "source": "/api/:path*",
-      "destination": "/api"
-    },
-    {
-      "source": "/postman_collection.json",
-      "destination": "/api"
-    },
-    {
-      "source": "/postman-collection.json",
-      "destination": "/api"
-    },
-    {
-      "source": "/((?!api|assets|favicon.ico|postman).*)",
+      "source": "/((?!api/|assets/|favicon.ico|postman).*)",
       "destination": "/index.html"
     }
   ]

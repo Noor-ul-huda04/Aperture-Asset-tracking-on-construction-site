@@ -402,7 +402,7 @@ let db: DbState = {
     bufferedCount: 0
   },
   apiGateway: {
-    baseUrl: 'https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app',
+    baseUrl: '',
     apiKey: '',
     authHeaderScheme: 'Bearer Token',
     pollingIntervalSeconds: 15,
@@ -529,6 +529,24 @@ export function setNoCacheHeaders(res: any) {
   res.setHeader('Surrogate-Control', 'no-store');
 }
 
+// CORS & Preflight middleware (Mounted FIRST)
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', req.headers['access-control-request-headers'] || 'Content-Type, Authorization, X-API-Key, x-api-key, X-Firebase-AppCheck, x-firebase-appcheck, X-Requested-With, Cache-Control, Pragma, Accept');
+  res.setHeader('Access-Control-Expose-Headers', '*');
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  next();
+});
+
 // Global no-cache header middleware for all API requests
 app.use((req, res, next) => {
   if (req.url.startsWith('/api') || req.originalUrl?.startsWith('/api') || req.path?.startsWith('/api')) {
@@ -550,24 +568,6 @@ app.use((err: any, req: any, res: any, next: any) => {
     });
   }
   next(err);
-});
-
-// CORS & Preflight middleware
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (origin) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-  } else {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-  }
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', req.headers['access-control-request-headers'] || 'Content-Type, Authorization, X-API-Key, x-api-key, X-Firebase-AppCheck, x-firebase-appcheck, X-Requested-With, Cache-Control, Pragma, Accept');
-  res.setHeader('Access-Control-Expose-Headers', '*');
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-  next();
 });
 
 // Path normalization for Vercel Serverless Function invocations
@@ -2413,7 +2413,7 @@ export async function syncAllExternalApiToMongo(options: {
   wipeExisting?: boolean;
   isStartup?: boolean;
 } = {}) {
-  const targetUrl = options.externalUrl || db.apiGateway.baseUrl || 'https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app';
+  const targetUrl = options.externalUrl || db.apiGateway.baseUrl || '';
   const targetKey = options.apiKey || db.apiGateway.apiKey;
   const wipeExisting = Boolean(options.wipeExisting);
 
@@ -3096,7 +3096,8 @@ app.get(['/api/gao/read-tags', '/api/v1/rfid/tags'], (req, res) => {
 app.all(['/api/beeceptor/events', '/api/v1/beeceptor/events'], async (req, res) => {
   setNoCacheHeaders(res);
   try {
-    const targetUrl = `${(db.apiGateway?.baseUrl || 'https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app').replace(/\/$/, '')}/api/events`;
+    const defaultHost = req.protocol + '://' + (req.get('host') || 'localhost:3000');
+    const targetUrl = `${(db.apiGateway?.baseUrl || defaultHost).replace(/\/$/, '')}/api/events`;
     const clientApiKey = req.headers['x-api-key'] || req.headers['authorization'];
     const fetchHeaders: Record<string, string> = {
       'Accept': 'application/json',
@@ -3214,7 +3215,7 @@ app.post(['/api/gateway/test-connection', '/api/v1/gateway/test-connection'], as
     headersSent: {
       [authHeaderScheme === 'Bearer Token' ? 'Authorization' : 'X-API-Key']: authHeaderScheme === 'Bearer Token' ? `Bearer ${apiKey ? apiKey.slice(0, 6) + '...' : 'TOKEN'}` : (apiKey ? apiKey.slice(0, 6) + '...' : 'KEY')
     },
-    targetUrl: baseUrl || 'https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app'
+    targetUrl: baseUrl || (req.protocol + '://' + (req.get('host') || 'localhost:3000'))
   });
 });
 
