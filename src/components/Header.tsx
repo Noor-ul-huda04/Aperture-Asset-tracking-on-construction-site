@@ -107,7 +107,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Right: Clean, Essential Actions & Status */}
         <div className="flex items-center gap-2.5 shrink-0 ml-auto">
 
-          {/* Postman API Connection Badge & Quick Refresh */}
+          {/* Backend API Connection Badge & Quick Refresh */}
           <div className="flex items-center gap-1 bg-slate-800/90 border border-slate-700/80 p-1 rounded-xl shrink-0">
             <div 
               className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-mono font-medium border transition-all whitespace-nowrap ${

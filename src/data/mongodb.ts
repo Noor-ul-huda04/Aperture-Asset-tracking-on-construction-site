@@ -12,6 +12,20 @@ let isConnected = false;
 let connectionError: string | null = null;
 let lastSyncedAt: string | null = null;
 
+export function cleanMongoDoc<T = any>(doc: any): T {
+  if (!doc) return doc;
+  const { _id, ...rest } = doc;
+  return {
+    id: doc.id || (_id ? String(_id) : undefined),
+    ...rest
+  } as T;
+}
+
+export function cleanMongoDocs<T = any>(docs: any[]): T[] {
+  if (!Array.isArray(docs)) return [];
+  return docs.map(doc => cleanMongoDoc<T>(doc));
+}
+
 export async function connectToMongoDB(): Promise<{ db: Db | null; connected: boolean; error: string | null }> {
   let rawUri = process.env.MONGODB_URI;
   
@@ -20,7 +34,7 @@ export async function connectToMongoDB(): Promise<{ db: Db | null; connected: bo
     return { 
       db: null, 
       connected: false, 
-      error: 'MONGODB_URI environment variable is missing or empty. Please set MONGODB_URI in Settings/Secrets.' 
+      error: 'MONGODB_URI environment variable is missing or empty. Please configure MONGODB_URI in Settings/Secrets.' 
     };
   }
 
@@ -61,14 +75,14 @@ export async function connectToMongoDB(): Promise<{ db: Db | null; connected: bo
 
   const optionsList = [
     {
-      connectTimeoutMS: 3000,
-      serverSelectionTimeoutMS: 3000,
+      connectTimeoutMS: 4000,
+      serverSelectionTimeoutMS: 4000,
       ignoreUndefined: true,
       family: 4
     },
     {
-      connectTimeoutMS: 3000,
-      serverSelectionTimeoutMS: 3000,
+      connectTimeoutMS: 4000,
+      serverSelectionTimeoutMS: 4000,
       ignoreUndefined: true,
       tls: true,
       tlsAllowInvalidCertificates: true,
@@ -119,9 +133,9 @@ export async function connectToMongoDB(): Promise<{ db: Db | null; connected: bo
       resolve({
         db: null,
         connected: false,
-        error: 'MongoDB Atlas connection timed out (3.5s limit reached). Ensure 0.0.0.0/0 is added in Atlas Network Access.'
+        error: 'MongoDB Atlas connection timed out (4.5s limit reached). Ensure 0.0.0.0/0 is added in Atlas Network Access.'
       });
-    }, 3500);
+    }, 4500);
   });
 
   return Promise.race([connectTask(), timeoutGuard]);
@@ -150,3 +164,4 @@ export function getLastSyncedAt(): string | null {
 export function setLastSyncedAt(timestamp: string) {
   lastSyncedAt = timestamp;
 }
+

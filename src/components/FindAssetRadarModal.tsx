@@ -38,8 +38,9 @@ export const FindAssetRadarModal: React.FC<FindAssetRadarModalProps> = ({
 
   // Calculate distance & signal percentage based on RSSI dBm
   // dBm ranges from -30 (very close < 1m) to -85 (far / edge of read range ~10m)
-  const signalPercent = Math.min(100, Math.max(5, Math.round(((rssi + 85) / 55) * 100)));
-  const estimatedDistanceMeters = ((100 - signalPercent) / 10).toFixed(1);
+  const currentRssi = typeof rssi === 'number' ? rssi : -60;
+  const signalPercent = Math.min(100, Math.max(5, Math.round(((currentRssi + 85) / 55) * 100)));
+  const estimatedDistanceMeters = (((100 - signalPercent) / 10) || 0).toFixed(1);
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">

@@ -190,7 +190,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div>
             <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Tracked Value</p>
             <p className="text-3xl font-black text-slate-900 font-mono mt-1.5 leading-none">
-              ${(totalValue / 1000).toFixed(1)}k
+              ${((Number(totalValue) || 0) / 1000).toFixed(1)}k
             </p>
             <p className="text-xs text-blue-600 mt-2 flex items-center gap-1 font-semibold">
               <TrendingUp className="w-3.5 h-3.5" />
@@ -468,7 +468,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <p className="text-xs text-slate-400 truncate">{s.location || s.address || 'Active Site'}</p>
                     <div className="pt-2 border-t border-slate-200/50 flex items-center justify-between text-xs">
                       <span className="text-slate-500">Assets: <strong className="text-slate-800 font-bold font-mono">{siteAssets.length}</strong></span>
-                      <span className="text-slate-500">Value: <strong className="text-emerald-600 font-bold font-mono">${(siteValue/1000).toFixed(0)}k</strong></span>
+                      <span className="text-slate-500">Value: <strong className="text-emerald-600 font-bold font-mono">${((Number(siteValue) || 0)/1000).toFixed(0)}k</strong></span>
                     </div>
                   </div>
                 );

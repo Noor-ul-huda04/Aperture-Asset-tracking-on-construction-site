@@ -101,7 +101,7 @@ export const ReportsAnalyticsView: React.FC<ReportsAnalyticsViewProps> = ({
           <td><strong>${cat}</strong></td>
           <td>${stat.count} items</td>
           <td>$${(stat.totalCost ?? 0).toLocaleString()}</td>
-          <td>${((stat.totalCost / (totalFleetCost || 1)) * 100).toFixed(1)}%</td>
+          <td>${(((Number(stat.totalCost) || 0) / (Number(totalFleetCost) || 1)) * 100).toFixed(1)}%</td>
         </tr>
       `).join('')}
     </tbody>
@@ -304,7 +304,7 @@ export const ReportsAnalyticsView: React.FC<ReportsAnalyticsViewProps> = ({
                     ${(stat.totalCost ?? 0).toLocaleString()}
                   </td>
                   <td className="py-2.5 px-3 text-right text-emerald-700 font-bold">
-                    {((stat.totalCost / (totalFleetCost || 1)) * 100).toFixed(1)}%
+                    {(((Number(stat.totalCost) || 0) / (Number(totalFleetCost) || 1)) * 100).toFixed(1)}%
                   </td>
                 </tr>
               ))}

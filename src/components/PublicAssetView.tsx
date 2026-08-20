@@ -202,10 +202,12 @@ export const PublicAssetView: React.FC<PublicAssetViewProps> = ({
                   <span className="text-xs text-slate-400 font-medium">Assigned Zone / Laydown Yard</span>
                   <span className="text-xs font-bold text-white font-mono">{asset.zoneName}</span>
                 </div>
-                {site && (
+                {site && site.coordinates && (
                   <div className="flex items-center justify-between pt-2 border-t border-slate-900 text-[11px] text-slate-400">
                     <span>GPS Coordinates</span>
-                    <span className="font-mono text-slate-300">{site.coordinates.lat.toFixed(4)}, {site.coordinates.lng.toFixed(4)}</span>
+                    <span className="font-mono text-slate-300">
+                      {typeof site.coordinates.lat === 'number' ? site.coordinates.lat.toFixed(4) : (site.coordinates.lat || '37.7749')}, {typeof site.coordinates.lng === 'number' ? site.coordinates.lng.toFixed(4) : (site.coordinates.lng || '-122.4194')}
+                    </span>
                   </div>
                 )}
               </div>

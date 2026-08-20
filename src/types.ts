@@ -201,7 +201,7 @@ export interface InventoryItem {
 export interface AuditLog {
   id: string;
   action: string;
-  entityType: 'ASSET' | 'CHECKOUT' | 'MAINTENANCE' | 'ZONE' | 'READER' | 'USER' | 'TAG' | 'DATABASE' | 'SECURITY';
+  entityType: 'ASSET' | 'CHECKOUT' | 'MAINTENANCE' | 'ZONE' | 'READER' | 'USER' | 'TAG' | 'DATABASE' | 'SECURITY' | 'SITE' | 'INVENTORY' | 'SYSTEM';
   entityId: string;
   entityName: string;
   userId: string;

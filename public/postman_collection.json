@@ -8,9 +8,9 @@
   "variable": [
     {
       "key": "url",
-      "value": "https://68cc1e0b-071a-4cd1-9c95-4912676a5624.mock.pstmn.io",
+      "value": "https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app",
       "type": "string",
-      "description": "Base URL of the Aperture Asset Tracking API (mock server or deployed backend)"
+      "description": "Base URL of the Aperture Asset Tracking API (deployed backend)"
     }
   ],
   "item": [

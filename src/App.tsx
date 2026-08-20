@@ -51,8 +51,11 @@ import {
   returnCheckout,
   resolveAlert,
   createMaintenance,
+  createInventoryItem,
   updateInventory,
+  createReader,
   submitRfidScan,
+  simulateScan,
   API_BASE_URL
 } from './services/api';
 
@@ -67,7 +70,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [apiError, setApiError] = useState<string | null>(null);
 
-  // Core Data Collections State (Populated directly from Postman Mock REST API)
+  // Core Data Collections State (Populated directly from Backend API & MongoDB Atlas)
   const [assets, setAssets] = useState<Asset[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
   const [checkouts, setCheckouts] = useState<Checkout[]>([]);
@@ -83,15 +86,15 @@ export default function App() {
   const [isStreaming, setIsStreaming] = useState<boolean>(true);
   const [offlineMode, setOfflineMode] = useState<boolean>(false);
 
-  // Firestore Connection & Manual Sync State
-  const [isFirestoreOnline, setIsFirestoreOnline] = useState<boolean>(navigator.onLine);
+  // Database Connection & Manual Sync State
+  const [isDatabaseOnline, setIsDatabaseOnline] = useState<boolean>(navigator.onLine);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(new Date().toLocaleTimeString());
 
   // Real-time Network Connectivity Monitoring
   useEffect(() => {
-    const handleOnline = () => setIsFirestoreOnline(true);
-    const handleOffline = () => setIsFirestoreOnline(false);
+    const handleOnline = () => setIsDatabaseOnline(true);
+    const handleOffline = () => setIsDatabaseOnline(false);
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
@@ -129,7 +132,7 @@ export default function App() {
 
   const isFetchingRef = useRef<boolean>(false);
 
-  // Primary Data Fetcher for Postman Mock API
+  // Primary Data Fetcher for Real Backend API & MongoDB Atlas
   const loadAllData = useCallback(async () => {
     isFetchingRef.current = true;
     setIsLoading(true);
@@ -164,7 +167,7 @@ export default function App() {
       ].every(r => r.status === 'rejected');
 
       if (allRejected) {
-        setApiError('Unable to load data from Postman Mock API.');
+        setApiError('Unable to load data from Backend API & MongoDB Atlas.');
         return;
       }
 
@@ -183,7 +186,7 @@ export default function App() {
 
       setLastSyncedAt(new Date().toLocaleTimeString());
     } catch (err: any) {
-      setApiError('Unable to load data from Postman Mock API.');
+      setApiError('Unable to load data from Backend API & MongoDB Atlas.');
     } finally {
       setIsLoading(false);
       isFetchingRef.current = false;
@@ -324,64 +327,62 @@ export default function App() {
   };
 
   const handleAddInventoryItem = async (data: Partial<InventoryItem>) => {
-    const newItem: InventoryItem = {
-      id: `inv-${Date.now()}`,
-      siteId: selectedSiteId === 'ALL' ? (sites[0]?.id || 'site-01') : selectedSiteId,
-      siteName: sites.find(s => s.id === selectedSiteId)?.name || 'Harbor Expansion Site A',
-      name: data.name || 'New Item SKU',
-      category: data.category || 'Supplies',
-      quantityOnHand: data.quantityOnHand || 0,
-      minThreshold: data.minThreshold || 10,
-      reorderPoint: data.reorderPoint || 15,
-      unit: data.unit || 'units',
-      costPerUnit: data.costPerUnit || 10,
-      ...data
-    };
-    setInventory(prev => [newItem, ...prev]);
-    showToast(`Inventory item "${newItem.name}" added to stock catalog`);
+    try {
+      const newItem = await createInventoryItem({
+        siteId: selectedSiteId === 'ALL' ? (sites[0]?.id || 'SITE-001') : selectedSiteId,
+        siteName: sites.find(s => s.id === selectedSiteId)?.name || 'Downtown Metro Tower',
+        name: data.name || 'New Item SKU',
+        category: data.category || 'Supplies',
+        quantityOnHand: data.quantityOnHand || 0,
+        minThreshold: data.minThreshold || 10,
+        reorderPoint: data.reorderPoint || 15,
+        unit: data.unit || 'units',
+        costPerUnit: data.costPerUnit || 10,
+        ...data
+      });
+      showToast(`Inventory item "${newItem.name}" saved to stock catalog`);
+    } catch (err: any) {
+      console.error('Failed to add inventory item:', err);
+      showToast(`Error adding inventory item: ${err.message || String(err)}`, 'error');
+    } finally {
+      await loadAllData();
+    }
   };
 
-  const handleAddReader = (data: Partial<Reader>) => {
-    const newReader: Reader = {
-      id: `reader-${Date.now()}`,
-      siteId: selectedSiteId === 'ALL' ? (sites[0]?.id || 'site-01') : selectedSiteId,
-      siteName: sites.find(s => s.id === selectedSiteId)?.name || 'Harbor Expansion Site A',
-      name: data.name || 'New Gateway Portal',
-      type: data.type || 'Fixed Portal',
-      ipAddress: data.ipAddress || '192.168.1.200',
-      zoneId: data.zoneId || 'zone-01',
-      zoneName: data.zoneName || 'Laydown Yard',
-      antennaPowerDbm: data.antennaPowerDbm || 28,
-      status: 'Online',
-      lastHeartbeat: new Date().toISOString(),
-      firmwareVersion: 'v4.2.0-PROD',
-      readCountTotal: 0,
-      bufferedEventsCount: 0,
-      ...data
-    };
-    setReaders(prev => [...prev, newReader]);
-    showToast(`Reader gateway "${newReader.name}" connected and online`);
+  const handleAddReader = async (data: Partial<Reader>) => {
+    try {
+      const newReader = await createReader({
+        siteId: selectedSiteId === 'ALL' ? (sites[0]?.id || 'SITE-001') : selectedSiteId,
+        siteName: sites.find(s => s.id === selectedSiteId)?.name || 'Downtown Metro Tower',
+        name: data.name || 'New Gateway Portal',
+        type: data.type || 'Fixed Portal',
+        ipAddress: data.ipAddress || '192.168.1.200',
+        zoneId: data.zoneId || 'zone-01',
+        zoneName: data.zoneName || 'Laydown Yard',
+        antennaPowerDbm: data.antennaPowerDbm || 28,
+        status: 'Online',
+        firmwareVersion: 'v4.2.0-PROD',
+        ...data
+      });
+      showToast(`Reader gateway "${newReader.name}" connected and saved`);
+    } catch (err: any) {
+      console.error('Failed to add reader:', err);
+      showToast(`Error adding reader: ${err.message || String(err)}`, 'error');
+    } finally {
+      await loadAllData();
+    }
   };
 
-  const handleTriggerReaderScan = (readerId: string, readerName: string) => {
+  const handleTriggerReaderScan = async (readerId: string, readerName: string) => {
     const sampleAsset = assets[0] || { id: 'ast-cat-320', name: 'CAT 320D Excavator #401', tagEpc: 'E2801191A001' };
-    const newEvent: ReadEvent = {
-      id: `evt-${Date.now()}`,
-      epc: sampleAsset.tagEpc || 'E2801191A001',
-      assetId: sampleAsset.id,
-      assetName: sampleAsset.name,
-      readerId,
-      readerName,
-      siteId: selectedSiteId === 'ALL' ? 'site-01' : selectedSiteId,
-      siteName: 'Harbor Expansion Site A',
-      zoneId: 'zone-01',
-      zoneName: 'RFID Portal Gate',
-      rssi: -58,
-      timestamp: new Date().toISOString(),
-      eventType: 'SCAN'
-    };
-    setReadEvents(prev => [newEvent, ...(Array.isArray(prev) ? prev : [])].slice(0, 200));
-    showToast(`Live tag read recorded on ${readerName} for ${sampleAsset.name}`);
+    try {
+      await simulateScan(sampleAsset.tagEpc || 'E2801191A001', readerId, -58);
+      showToast(`Live tag read recorded on ${readerName} for ${sampleAsset.name}`);
+    } catch (err: any) {
+      console.error('Failed to trigger scan:', err);
+    } finally {
+      await loadAllData();
+    }
   };
 
   const handleBatchImportAssets = async (newAssetsList: Partial<Asset>[]) => {
@@ -438,7 +439,7 @@ export default function App() {
         allUsers={users}
         isStreaming={isStreaming}
         offlineMode={offlineMode}
-        isFirestoreOnline={isFirestoreOnline}
+        isFirestoreOnline={isDatabaseOnline}
         onManualSync={handleManualSync}
         isSyncing={isSyncing}
         lastSyncedAt={lastSyncedAt}
@@ -478,7 +479,7 @@ export default function App() {
                   <AlertTriangle className="w-5 h-5 stroke-[2.5]" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm text-red-950">Unable to load data from Postman Mock API.</h3>
+                  <h3 className="font-bold text-sm text-red-950">Unable to load data from Backend API & MongoDB Atlas.</h3>
                   <p className="text-xs text-red-700 mt-0.5">{apiError}</p>
                   <p className="text-[11px] text-red-500 font-mono mt-1">
                     Target Endpoint: {API_BASE_URL}
@@ -500,7 +501,7 @@ export default function App() {
           {isLoading && !apiError && assets.length === 0 && sites.length === 0 && (
             <div className="bg-white border border-slate-200 rounded-xl p-12 text-center text-slate-500 space-y-3">
               <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto" />
-              <h3 className="font-bold text-sm text-slate-800">Loading asset tracking data from Postman API...</h3>
+              <h3 className="font-bold text-sm text-slate-800">Loading asset tracking data from Backend API...</h3>
               <p className="text-xs text-slate-500 font-mono">{API_BASE_URL}</p>
             </div>
           )}

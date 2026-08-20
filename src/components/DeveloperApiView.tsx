@@ -279,6 +279,82 @@ export const DeveloperApiView: React.FC<DeveloperApiViewProps> = () => {
         </div>
       </div>
 
+      {/* MongoDB Atlas Real-Time Ingestion Quick-Action Bar */}
+      <div className="bg-gradient-to-r from-purple-950/40 via-slate-900 to-slate-900 border border-purple-900/40 rounded-2xl p-4 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-400">
+            <Layers className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-white font-mono">MongoDB Atlas Primary Data Store</span>
+              <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                Persistent Database
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Sync API responses directly into your MongoDB Atlas collections (assets, sites, readers, inventory, users).
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                showNotification('Ingesting External API data into MongoDB Atlas...', 'success');
+                const res = await fetch('/api/external/sync', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ wipeExisting: false })
+                });
+                const data = await res.json();
+                if (data.success) {
+                  showNotification(`Synced ${data.syncedCounts?.assets || 0} assets and records to MongoDB Atlas`, 'success');
+                } else {
+                  showNotification(data.message || 'Sync failed', 'error');
+                }
+              } catch (e: any) {
+                showNotification(e.message || 'Sync failed', 'error');
+              }
+            }}
+            className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold font-mono rounded-xl flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Sync API to MongoDB</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={async () => {
+              if (window.confirm('Wipe old default sample records and replace with live External API records in MongoDB?')) {
+                try {
+                  showNotification('Wiping default records & saving API data to MongoDB...', 'success');
+                  const res = await fetch('/api/external/sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ wipeExisting: true })
+                  });
+                  const data = await res.json();
+                  if (data.success) {
+                    showNotification(`MongoDB Atlas updated with ${data.syncedCounts?.assets || 0} live API assets`, 'success');
+                  } else {
+                    showNotification(data.message || 'Wipe sync failed', 'error');
+                  }
+                } catch (e: any) {
+                  showNotification(e.message || 'Wipe sync failed', 'error');
+                }
+              }
+            }}
+            className="px-3.5 py-1.5 bg-slate-800 hover:bg-amber-700 hover:border-amber-600 border border-slate-700 text-slate-200 hover:text-white text-xs font-bold font-mono rounded-xl flex items-center gap-1.5 transition-all cursor-pointer"
+          >
+            <Trash2 className="w-3.5 h-3.5 text-amber-400" />
+            <span>Wipe & Save API Data</span>
+          </button>
+        </div>
+      </div>
+
       {/* Endpoint Selector Grid */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
@@ -467,7 +543,7 @@ export const DeveloperApiView: React.FC<DeveloperApiViewProps> = () => {
               <div className="space-y-0.5">
                 <span className="text-slate-500 text-[10px] block">Target Host</span>
                 <span className="text-slate-300 truncate block text-[10px]" title={responseMeta.url}>
-                  pstmn.io
+                  {responseMeta.url ? new URL(responseMeta.url, window.location.origin).host : 'Backend API'}
                 </span>
               </div>
               <div className="col-span-2 sm:col-span-4 pt-1 border-t border-slate-800/60 text-[10px] text-slate-400 truncate">
@@ -481,7 +557,7 @@ export const DeveloperApiView: React.FC<DeveloperApiViewProps> = () => {
             {isExecuting ? (
               <div className="flex items-center justify-center h-48 text-slate-500 gap-2 font-mono text-xs">
                 <RefreshCw className="w-4 h-4 animate-spin text-blue-400" />
-                <span>Executing request to Postman Mock Server...</span>
+                <span>Executing request to Backend API & MongoDB Atlas...</span>
               </div>
             ) : testResponse ? (
               <pre className="text-xs font-mono text-slate-200 whitespace-pre-wrap leading-relaxed">
@@ -489,7 +565,7 @@ export const DeveloperApiView: React.FC<DeveloperApiViewProps> = () => {
               </pre>
             ) : (
               <div className="flex items-center justify-center h-48 text-slate-600 font-mono text-xs italic">
-                Click "Send Request" to test endpoint directly against the Postman Mock Server.
+                Click "Send Request" to test endpoint directly against the Backend API.
               </div>
             )}
           </div>

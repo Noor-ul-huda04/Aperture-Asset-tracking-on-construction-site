@@ -45,9 +45,12 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
 
   const handleExportCsv = () => {
     const headers = ['ID,Item Name,Category,Site Location,Quantity On Hand,Unit,Min Threshold,Cost Per Unit,Total Value\n'];
-    const rows = (inventory || []).map(i => 
-      `"${i.id}","${i.name}","${i.category}","${i.siteName}",${i.quantityOnHand},"${i.unit}",${i.minThreshold},${i.costPerUnit},${(i.quantityOnHand * i.costPerUnit).toFixed(2)}`
-    );
+    const rows = (inventory || []).map(i => {
+      const qty = Number(i.quantityOnHand) || 0;
+      const cpu = Number(i.costPerUnit) || 0;
+      const total = qty * cpu;
+      return `"${i.id}","${i.name}","${i.category}","${i.siteName}",${qty},"${i.unit || 'units'}",${Number(i.minThreshold) || 0},${cpu},${total.toFixed(2)}`;
+    });
     const content = [...headers, ...rows].join('\n');
     downloadFile(content, `Aperture_Bulk_Inventory_${new Date().toISOString().split('T')[0]}.csv`, 'text/csv');
     showToast('Inventory CSV exported successfully!');
@@ -198,7 +201,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                   </td>
 
                   <td className="py-3 px-4 text-right font-mono font-bold text-emerald-700">
-                    ${item.costPerUnit.toFixed(2)}
+                    ${(Number(item.costPerUnit) || 0).toFixed(2)}
                   </td>
 
                   <td className="py-3 px-4 text-center">

@@ -46,6 +46,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [testResult, setTestResult] = useState<any>(null);
   const [testingMongo, setTestingMongo] = useState(false);
 
+  // External API to MongoDB Ingestion & Sync state
+  const [externalApiUrl, setExternalApiUrl] = useState<string>('https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app');
+  const [externalApiKey, setExternalApiKey] = useState<string>('');
+  const [apiSyncLoading, setApiSyncLoading] = useState<boolean>(false);
+  const [wipeLoading, setWipeLoading] = useState<boolean>(false);
+  const [apiSyncResult, setApiSyncResult] = useState<any>(null);
+
   useEffect(() => {
     if (activeSettingsTab === 'database') {
       fetchMongoStatus();
@@ -77,6 +84,40 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       console.error('Sync error:', err);
     } finally {
       setMongoLoading(false);
+    }
+  };
+
+  const handleSyncApiToMongo = async (wipeExisting: boolean = false) => {
+    if (wipeExisting) {
+      setWipeLoading(true);
+    } else {
+      setApiSyncLoading(true);
+    }
+    setApiSyncResult(null);
+
+    try {
+      const res = await fetch('/api/external/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          externalUrl: externalApiUrl,
+          apiKey: externalApiKey,
+          wipeExisting
+        })
+      });
+      const data = await res.json();
+      setApiSyncResult(data);
+      await fetchMongoStatus();
+      onRefreshAll();
+    } catch (err: any) {
+      setApiSyncResult({
+        success: false,
+        error: 'SYNC_ERROR',
+        message: err.message || 'Failed to sync External API data into MongoDB'
+      });
+    } finally {
+      setApiSyncLoading(false);
+      setWipeLoading(false);
     }
   };
 
@@ -927,6 +968,109 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 )}
               </div>
             )}
+
+            {/* External API to MongoDB Data Ingestion & Storage Section */}
+            <div className="border-t border-slate-200/80 pt-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-amber-600" />
+                  <h4 className="font-bold text-xs text-slate-900 uppercase tracking-wider font-mono">
+                    Store Live External API Data in MongoDB Atlas
+                  </h4>
+                </div>
+                <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 font-mono font-bold">
+                  API &rarr; Backend &rarr; MongoDB
+                </span>
+              </div>
+
+              <p className="text-xs text-slate-600 leading-relaxed">
+                If your MongoDB Atlas was initially seeded with default demo assets, you can pull all real-time data from your External API Gateway (Postman Mock / Live API) and store it directly into your MongoDB Atlas collections.
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">External API Gateway Base URL</label>
+                  <input
+                    type="url"
+                    value={externalApiUrl}
+                    onChange={(e) => setExternalApiUrl(e.target.value)}
+                    placeholder="https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-slate-900 font-mono text-xs focus:outline-none"
+                  />
+                  <div className="flex items-center gap-2 mt-1">
+                    <button
+                      type="button"
+                      onClick={() => setExternalApiUrl('https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app')}
+                      className="text-[10px] text-blue-600 hover:underline font-mono"
+                    >
+                      Use Backend API Server URL
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">API Key / Bearer Secret (Optional)</label>
+                  <input
+                    type="password"
+                    value={externalApiKey}
+                    onChange={(e) => setExternalApiKey(e.target.value)}
+                    placeholder="Optional API Secret"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-slate-900 font-mono text-xs focus:outline-none"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">Passed in X-API-Key and Authorization headers</p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => handleSyncApiToMongo(false)}
+                  disabled={apiSyncLoading || wipeLoading}
+                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-xs transition-all disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${apiSyncLoading ? 'animate-spin' : ''}`} />
+                  <span>{apiSyncLoading ? 'Fetching & Saving API Data...' : 'Import & Save API Data to MongoDB (Upsert)'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm('Are you sure you want to replace default demo records in MongoDB Atlas with live data from your External API?')) {
+                      handleSyncApiToMongo(true);
+                    }
+                  }}
+                  disabled={apiSyncLoading || wipeLoading}
+                  className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-xs transition-all disabled:opacity-50"
+                >
+                  <Database className={`w-3.5 h-3.5 ${wipeLoading ? 'animate-spin' : ''}`} />
+                  <span>{wipeLoading ? 'Wiping & Replacing...' : 'Wipe Pre-Made Data & Replace with API Data'}</span>
+                </button>
+              </div>
+
+              {/* API Sync Result Banner */}
+              {apiSyncResult && (
+                <div className={`p-4 rounded-xl border text-xs space-y-2 font-mono ${apiSyncResult.success ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-red-50 border-red-200 text-red-900'}`}>
+                  <div className="flex items-center justify-between font-bold border-b pb-2 border-emerald-200/60">
+                    <span className="flex items-center gap-1.5">
+                      {apiSyncResult.success ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <AlertTriangle className="w-4 h-4 text-red-600" />}
+                      API to MongoDB Ingestion: {apiSyncResult.success ? 'SUCCESSFULLY SAVED TO MONGODB' : 'FAILED'}
+                    </span>
+                    <span className="text-[10px] text-slate-500">{new Date(apiSyncResult.syncedAt || Date.now()).toLocaleTimeString()}</span>
+                  </div>
+                  <p className="font-sans text-[11px]">{apiSyncResult.message}</p>
+                  {apiSyncResult.syncedCounts && (
+                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 pt-1 font-mono text-[11px]">
+                      {Object.entries(apiSyncResult.syncedCounts).map(([entity, count]) => (
+                        <div key={entity} className="bg-white/80 border border-emerald-200 rounded p-1.5 text-center">
+                          <span className="text-slate-500 capitalize block text-[10px]">{entity}</span>
+                          <span className="font-bold text-emerald-800">{count as number} docs</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             <div className="pt-2 flex justify-between items-center border-t border-slate-100">
               <span className="text-[11px] text-slate-400 font-mono">

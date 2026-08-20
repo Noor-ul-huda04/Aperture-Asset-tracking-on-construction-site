@@ -7,29 +7,17 @@ import { firebaseConfig } from './firebaseConfig';
 export { firebaseConfig };
 export const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
-// Silence Firestore internal network warning logs in preview sandboxes
-setLogLevel('error');
+// Silence Firestore internal network warning logs in preview and sandbox environments
+setLogLevel('silent');
 
 export const db = (() => {
-  const settings = {
-    experimentalForceLongPolling: true,
-    localCache: memoryLocalCache(),
-  };
-
   try {
     if (firebaseConfig.firestoreDatabaseId) {
-      return initializeFirestore(app, settings, firebaseConfig.firestoreDatabaseId);
+      return getFirestore(app, firebaseConfig.firestoreDatabaseId);
     }
-    return initializeFirestore(app, settings);
+    return getFirestore(app);
   } catch (_e) {
-    try {
-      if (firebaseConfig.firestoreDatabaseId) {
-        return getFirestore(app, firebaseConfig.firestoreDatabaseId);
-      }
-      return getFirestore(app);
-    } catch (_e2) {
-      return getFirestore(app);
-    }
+    return getFirestore(app);
   }
 })();
 
@@ -206,8 +194,8 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
-// Connection test
-async function testConnection() {
+// Optional connection test helper
+export async function testConnection() {
   try {
     const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000));
     await Promise.race([
@@ -215,7 +203,6 @@ async function testConnection() {
       timeoutPromise
     ]);
   } catch (_err) {
-    // Silent fallback for offline sandboxed preview environments
+    // Graceful silent fallback for preview and sandboxed environments
   }
 }
-testConnection();

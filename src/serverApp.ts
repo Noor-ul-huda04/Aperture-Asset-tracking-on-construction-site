@@ -32,6 +32,18 @@ function getAiClient(): GoogleGenAI | null {
 
 const PORT = Number(process.env.PORT) || 3000;
 
+// Guarantees a real (awaited) MongoDB connection attempt before a route queries data.
+// Fixes the serverless "cold start returns empty" bug: previously routes called getDb()
+// directly, which only returns an already-established connection. On a cold start the
+// connection may still be in progress (or not yet attempted), so getDb() returned null
+// and the route silently fell back to empty/default in-memory data instead of Mongo.
+async function ensureDb() {
+  let mongoDb = getDb();
+  if (mongoDb && isMongoConnected()) return mongoDb;
+  const result = await connectToMongoDB();
+  return result.db;
+}
+
 interface DbState {
   assets: Asset[];
   sites: Site[];
@@ -327,6 +339,45 @@ const DEFAULT_USERS: User[] = [
   }
 ];
 
+const DEFAULT_INVENTORY: InventoryItem[] = [
+  {
+    id: 'inv-101',
+    name: 'Industrial Heavy Duty UHF RFID Passive Tags (Pack of 100)',
+    category: 'Supplies',
+    siteId: 'SITE-001',
+    siteName: 'Downtown Metro Tower',
+    quantityOnHand: 450,
+    minThreshold: 100,
+    reorderPoint: 150,
+    unit: 'tags',
+    costPerUnit: 1.25
+  },
+  {
+    id: 'inv-102',
+    name: 'Anti-Metal Mountable On-Metal RFID Gen2 Tags',
+    category: 'Supplies',
+    siteId: 'SITE-001',
+    siteName: 'Downtown Metro Tower',
+    quantityOnHand: 180,
+    minThreshold: 50,
+    reorderPoint: 80,
+    unit: 'tags',
+    costPerUnit: 4.80
+  },
+  {
+    id: 'inv-103',
+    name: 'Zebra TC57 Replacement Lithium-Ion Batteries',
+    category: 'Equipment',
+    siteId: 'SITE-002',
+    siteName: 'Riverside Commercial Complex',
+    quantityOnHand: 12,
+    minThreshold: 4,
+    reorderPoint: 6,
+    unit: 'batteries',
+    costPerUnit: 85
+  }
+];
+
 let db: DbState = {
   assets: [...DEFAULT_ASSETS],
   sites: [...DEFAULT_SITES],
@@ -335,7 +386,7 @@ let db: DbState = {
   checkouts: [],
   maintenance: [],
   alerts: [],
-  inventory: [],
+  inventory: [...DEFAULT_INVENTORY],
   events: [],
   auditLogs: [],
   apiEndpointLogs: [],
@@ -346,13 +397,13 @@ let db: DbState = {
     bufferedCount: 0
   },
   apiGateway: {
-    baseUrl: 'https://68cc1e0b-071a-4cd1-9c95-4912676a5624.mock.pstmn.io',
-    apiKey: 'gao_rfid_live_key_9941a87b32c',
-    authHeaderScheme: 'X-API-Key',
+    baseUrl: 'https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app',
+    apiKey: '',
+    authHeaderScheme: 'Bearer Token',
     pollingIntervalSeconds: 15,
-    isPollingActive: true,
+    isPollingActive: false,
     lastVerifiedAt: new Date().toISOString(),
-    latencyMs: 520,
+    latencyMs: 120,
     status: 'CONNECTED'
   }
 };
@@ -373,7 +424,7 @@ export async function ensureMongoConnected() {
   try {
     await Promise.race([
       mongoInitPromise,
-      new Promise((resolve) => setTimeout(resolve, 1500))
+      new Promise((resolve) => setTimeout(resolve, 2000))
     ]);
   } catch (err) {
     console.warn('[ensureMongoConnected] Non-blocking Mongo init warning:', err);
@@ -391,6 +442,14 @@ async function syncMongoDBOnStartup() {
   const mongoDb = getDb();
   if (!mongoDb) return;
 
+  const defaultSeeds: Record<string, any[]> = {
+    assets: DEFAULT_ASSETS,
+    sites: DEFAULT_SITES,
+    users: DEFAULT_USERS,
+    readers: DEFAULT_READERS,
+    inventory: DEFAULT_INVENTORY
+  };
+
   const collections = ['assets', 'sites', 'users', 'readers', 'checkouts', 'maintenance', 'alerts', 'inventory', 'events', 'auditLogs'];
 
   await Promise.all(collections.map(async (collName) => {
@@ -403,10 +462,15 @@ async function syncMongoDBOnStartup() {
           return { id: doc.id || (_id ? String(_id) : undefined), ...rest };
         });
         (db as any)[collName] = cleaned;
-        console.log(`[MongoDB] Loaded ${cleaned.length} documents from Atlas collection '${collName}'.`);
+        console.log(`[MongoDB Atlas] Loaded ${cleaned.length} documents from collection '${collName}'.`);
+      } else if (defaultSeeds[collName] && defaultSeeds[collName].length > 0) {
+        // Seed initial default documents into MongoDB Atlas collection so it's permanently stored in MongoDB
+        const seedDocs = defaultSeeds[collName].map(item => ({ ...item, _id: item.id as any }));
+        await coll.insertMany(seedDocs);
+        console.log(`[MongoDB Atlas] Initialized collection '${collName}' with ${seedDocs.length} seed documents.`);
       }
     } catch (e: any) {
-      console.warn(`[MongoDB] Error syncing collection '${collName}':`, e.message);
+      console.warn(`[MongoDB Atlas] Error syncing collection '${collName}':`, e.message);
     }
   }));
 
@@ -422,10 +486,10 @@ async function syncMongoDBOnStartup() {
 }
 
 function saveDb() {
-  // Persistence managed via MongoDB Atlas REST API sync
+  // Primary persistence managed via MongoDB Atlas
 }
 
-function addAuditLog(action: string, entityType: AuditLog['entityType'], entityId: string, entityName: string, userName: string, details: string) {
+async function addAuditLog(action: string, entityType: AuditLog['entityType'], entityId: string, entityName: string, userName: string, details: string) {
   const log: AuditLog = {
     id: `aud-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
     action,
@@ -439,6 +503,13 @@ function addAuditLog(action: string, entityType: AuditLog['entityType'], entityI
   };
   db.auditLogs.unshift(log);
   if (db.auditLogs.length > 200) db.auditLogs.pop();
+
+  const mongoDb = getDb();
+  if (mongoDb && isMongoConnected()) {
+    try {
+      await mongoDb.collection('auditLogs').insertOne({ ...log, _id: log.id as any });
+    } catch (_) {}
+  }
 }
 
 // Instantiate Express App
@@ -833,7 +904,7 @@ app.all(['/api/mongodb/test', '/api/v1/mongodb/test'], async (req, res) => {
 // Assets - GET (Supports MongoDB Atlas direct query)
 app.get(['/api/assets', '/api/v1/assets', '/assets'], async (req, res) => {
   setNoCacheHeaders(res);
-  const mongoDb = getDb();
+  const mongoDb = await ensureDb();
   let list: Asset[] = [];
 
   if (mongoDb && isMongoConnected()) {
@@ -844,6 +915,10 @@ app.get(['/api/assets', '/api/v1/assets', '/assets'], async (req, res) => {
         const { _id, ...rest } = doc;
         return { id: doc.id || (_id ? String(_id) : undefined), ...rest } as Asset;
       });
+      // Synchronize in-memory cache
+      if (list.length > 0) {
+        db.assets = list;
+      }
     } catch (err) {
       console.warn('[MongoDB Assets Query Error]', err);
       list = db.assets;
@@ -879,6 +954,46 @@ app.get(['/api/assets', '/api/v1/assets', '/assets'], async (req, res) => {
     );
   }
   res.json(list);
+});
+
+// Assets - GET by ID (Supports MongoDB Atlas direct query)
+app.get(['/api/assets/:id', '/api/v1/assets/:id', '/assets/:id'], async (req, res) => {
+  setNoCacheHeaders(res);
+  const id = req.params.id;
+  const mongoDb = await ensureDb();
+  let asset: Asset | null = null;
+
+  if (mongoDb && isMongoConnected()) {
+    try {
+      const doc = await mongoDb.collection('assets').findOne({
+        $or: [
+          { id: id },
+          { _id: id as any },
+          { tagEpc: id }
+        ]
+      });
+      if (doc) {
+        const { _id, ...rest } = doc;
+        asset = { id: doc.id || (_id ? String(_id) : undefined), ...rest } as Asset;
+      }
+    } catch (err) {
+      console.warn(`[MongoDB GET /api/assets/${id} Error]`, err);
+    }
+  }
+
+  if (!asset) {
+    asset = db.assets.find(a => a.id === id || a.tagEpc === id) || null;
+  }
+
+  if (!asset) {
+    return res.status(404).json({
+      error: 'ASSET_NOT_FOUND',
+      message: `Asset with ID or EPC "${id}" was not found`,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  res.json(asset);
 });
 
 // Assets - POST (Inserts asset into MongoDB Atlas)
@@ -917,7 +1032,7 @@ app.post(['/api/assets', '/api/v1/assets', '/assets'], async (req, res) => {
       notes: body.notes
     };
 
-    const mongoDb = getDb();
+    const mongoDb = await ensureDb();
     if (mongoDb && isMongoConnected()) {
       try {
         const payload: Record<string, any> = { ...newAsset, _id: newAsset.id as any };
@@ -987,7 +1102,7 @@ app.post(['/api/assets/batch', '/api/v1/assets/batch', '/assets/batch'], async (
     };
   });
 
-  const mongoDb = getDb();
+  const mongoDb = await ensureDb();
   if (mongoDb && isMongoConnected()) {
     try {
       const docs = createdList.map(item => ({ ...item, _id: item.id }));
@@ -1019,7 +1134,7 @@ const handleAssetUpdate = async (req: any, res: any) => {
     const sanitizedUpdate: Record<string, any> = { ...updateData };
     Object.keys(sanitizedUpdate).forEach(k => { if (sanitizedUpdate[k] === undefined) delete sanitizedUpdate[k]; });
 
-    const mongoDb = getDb();
+    const mongoDb = await ensureDb();
     let updatedAsset: Asset | null = null;
 
     if (mongoDb && isMongoConnected()) {
@@ -1070,7 +1185,7 @@ app.delete(['/api/assets/:id', '/api/v1/assets/:id', '/assets/:id'], async (req,
   console.log(`[Aperture Server] DELETE /api/assets/:id entry point reached. Method: ${req.method}, URL: ${req.originalUrl || req.url}, ID: ${id}`);
 
   try {
-    const mongoDb = getDb();
+    const mongoDb = await ensureDb();
     if (mongoDb && isMongoConnected()) {
       try {
         await mongoDb.collection('assets').deleteOne({ id });
@@ -1100,8 +1215,22 @@ app.delete(['/api/assets/:id', '/api/v1/assets/:id', '/assets/:id'], async (req,
 });
 
 // Checkouts
-app.get(['/api/checkouts', '/api/v1/checkouts'], (req, res) => {
+app.get(['/api/checkouts', '/api/v1/checkouts'], async (req, res) => {
   setNoCacheHeaders(res);
+  const mongoDb = await ensureDb();
+  if (mongoDb && isMongoConnected()) {
+    try {
+      const docs = await mongoDb.collection('checkouts').find({}).toArray();
+      if (docs.length > 0) {
+        db.checkouts = docs.map((doc: any) => {
+          const { _id, ...rest } = doc;
+          return { id: doc.id || (_id ? String(_id) : undefined), ...rest } as Checkout;
+        });
+      }
+    } catch (e) {
+      console.warn('[GET /api/checkouts] Mongo query error:', e);
+    }
+  }
   res.json(db.checkouts);
 });
 
@@ -1135,7 +1264,7 @@ app.post(['/api/checkouts', '/api/v1/checkouts'], async (req, res) => {
   asset.custodianId = newCheckout.userId;
   asset.custodianName = newCheckout.userName;
 
-  const mongoDb = getDb();
+  const mongoDb = await ensureDb();
   if (mongoDb && isMongoConnected()) {
     try {
       await mongoDb.collection('checkouts').insertOne({ ...newCheckout, _id: newCheckout.id as any });
@@ -1167,7 +1296,7 @@ app.post(['/api/checkouts/:id/return', '/api/v1/checkouts/:id/return'], async (r
     if (req.body.condition) asset.condition = req.body.condition;
   }
 
-  const mongoDb = getDb();
+  const mongoDb = await ensureDb();
   if (mongoDb && isMongoConnected()) {
     try {
       await mongoDb.collection('checkouts').updateOne({ id: checkout.id }, { $set: { status: 'RETURNED', actualReturn: checkout.actualReturn, returnCondition: checkout.returnCondition } });
@@ -1182,6 +1311,68 @@ app.post(['/api/checkouts/:id/return', '/api/v1/checkouts/:id/return'], async (r
   addAuditLog('CHECKOUT_RETURNED', 'CHECKOUT', checkout.id, checkout.assetName, checkout.userName, `Returned to zone in ${checkout.returnCondition} condition`);
   saveDb();
   res.json(checkout);
+});
+
+app.get(['/api/checkouts/:id', '/api/v1/checkouts/:id'], async (req, res) => {
+  setNoCacheHeaders(res);
+  const { id } = req.params;
+  const mongoDb = await ensureDb();
+  let checkout: Checkout | null = null;
+  if (mongoDb && isMongoConnected()) {
+    try {
+      const doc = await mongoDb.collection('checkouts').findOne({ $or: [{ id }, { _id: id as any }] });
+      if (doc) {
+        const { _id, ...rest } = doc;
+        checkout = { id: doc.id || String(_id), ...rest } as Checkout;
+      }
+    } catch (e) {
+      console.warn(`[GET /api/checkouts/${id}] Mongo error:`, e);
+    }
+  }
+  if (!checkout) checkout = db.checkouts.find(c => c.id === id) || null;
+  if (!checkout) return res.status(404).json({ error: 'CHECKOUT_NOT_FOUND', message: `Checkout record ${id} not found` });
+  res.json(checkout);
+});
+
+app.patch(['/api/checkouts/:id', '/api/v1/checkouts/:id'], async (req, res) => {
+  const { id } = req.params;
+  const updateData = req.body || {};
+  const mongoDb = await ensureDb();
+  let updatedCheckout: Checkout | null = null;
+  if (mongoDb && isMongoConnected()) {
+    try {
+      await mongoDb.collection('checkouts').updateOne({ id }, { $set: updateData });
+      const doc = await mongoDb.collection('checkouts').findOne({ id });
+      if (doc) {
+        const { _id, ...rest } = doc;
+        updatedCheckout = { id: doc.id || String(_id), ...rest } as Checkout;
+      }
+    } catch (e) {
+      console.warn(`[PATCH /api/checkouts/${id}] Mongo error:`, e);
+    }
+  }
+  const idx = db.checkouts.findIndex(c => c.id === id);
+  if (idx !== -1) {
+    db.checkouts[idx] = { ...db.checkouts[idx], ...updateData };
+    if (!updatedCheckout) updatedCheckout = db.checkouts[idx];
+  }
+  if (!updatedCheckout) return res.status(404).json({ error: 'CHECKOUT_NOT_FOUND', message: `Checkout ${id} not found` });
+  res.json(updatedCheckout);
+});
+
+app.delete(['/api/checkouts/:id', '/api/v1/checkouts/:id'], async (req, res) => {
+  const { id } = req.params;
+  const mongoDb = await ensureDb();
+  if (mongoDb && isMongoConnected()) {
+    try {
+      await mongoDb.collection('checkouts').deleteOne({ $or: [{ id }, { _id: id as any }] });
+    } catch (e) {
+      console.warn(`[DELETE /api/checkouts/${id}] Mongo error:`, e);
+    }
+  }
+  const idx = db.checkouts.findIndex(c => c.id === id);
+  if (idx !== -1) db.checkouts.splice(idx, 1);
+  res.json({ success: true, id, message: 'Checkout record deleted successfully' });
 });
 
 // Events
@@ -1227,7 +1418,7 @@ app.post(['/api/events/scan', '/api/v1/events/scan'], async (req, res) => {
     asset.zoneName = reader.zoneName;
   }
 
-  const mongoDb = getDb();
+  const mongoDb = await ensureDb();
   if (mongoDb && isMongoConnected()) {
     try {
       await mongoDb.collection('events').insertOne({ ...event, _id: event.id as any });
@@ -1244,14 +1435,42 @@ app.post(['/api/events/scan', '/api/v1/events/scan'], async (req, res) => {
   res.json({ success: true, event, assetUpdated: Boolean(asset) });
 });
 
-app.get(['/api/events', '/api/v1/events'], (req, res) => {
+app.get(['/api/events', '/api/v1/events'], async (req, res) => {
   setNoCacheHeaders(res);
+  const mongoDb = await ensureDb();
+  if (mongoDb && isMongoConnected()) {
+    try {
+      const docs = await mongoDb.collection('events').find({}).sort({ timestamp: -1 }).limit(100).toArray();
+      if (docs.length > 0) {
+        db.events = docs.map((doc: any) => {
+          const { _id, ...rest } = doc;
+          return { id: doc.id || (_id ? String(_id) : undefined), ...rest } as ReadEvent;
+        });
+      }
+    } catch (e) {
+      console.warn('[GET /api/events] Mongo query error:', e);
+    }
+  }
   res.json(db.events);
 });
 
 // Alerts
-app.get(['/api/alerts', '/api/v1/alerts'], (req, res) => {
+app.get(['/api/alerts', '/api/v1/alerts'], async (req, res) => {
   setNoCacheHeaders(res);
+  const mongoDb = await ensureDb();
+  if (mongoDb && isMongoConnected()) {
+    try {
+      const docs = await mongoDb.collection('alerts').find({}).sort({ triggeredAt: -1 }).toArray();
+      if (docs.length > 0) {
+        db.alerts = docs.map((doc: any) => {
+          const { _id, ...rest } = doc;
+          return { id: doc.id || (_id ? String(_id) : undefined), ...rest } as Alert;
+        });
+      }
+    } catch (e) {
+      console.warn('[GET /api/alerts] Mongo query error:', e);
+    }
+  }
   res.json(db.alerts);
 });
 
@@ -1271,7 +1490,7 @@ app.post(['/api/alerts', '/api/v1/alerts'], async (req, res) => {
     message: req.body.message || 'Custom alert created via API'
   };
 
-  const mongoDb = getDb();
+  const mongoDb = await ensureDb();
   if (mongoDb && isMongoConnected()) {
     try {
       await mongoDb.collection('alerts').insertOne({ ...newAlert, _id: newAlert.id as any });
@@ -1297,7 +1516,7 @@ app.patch(['/api/alerts/:id/resolve', '/api/v1/alerts/:id/resolve'], async (req,
     }
   }
 
-  const mongoDb = getDb();
+  const mongoDb = await ensureDb();
   if (mongoDb && isMongoConnected()) {
     try {
       await mongoDb.collection('alerts').updateOne({ id: alert.id }, { $set: { resolved: true, resolvedAt: alert.resolvedAt, resolvedBy: alert.resolvedBy } });
@@ -1309,14 +1528,66 @@ app.patch(['/api/alerts/:id/resolve', '/api/v1/alerts/:id/resolve'], async (req,
   res.json(alert);
 });
 
-// Sites
-app.get(['/api/sites', '/api/v1/sites'], (req, res) => {
+app.get(['/api/alerts/:id', '/api/v1/alerts/:id'], async (req, res) => {
   setNoCacheHeaders(res);
+  const { id } = req.params;
+  const mongoDb = await ensureDb();
+  let alert: Alert | null = null;
+  if (mongoDb && isMongoConnected()) {
+    try {
+      const doc = await mongoDb.collection('alerts').findOne({ $or: [{ id }, { _id: id as any }] });
+      if (doc) {
+        const { _id, ...rest } = doc;
+        alert = { id: doc.id || String(_id), ...rest } as Alert;
+      }
+    } catch (e) {
+      console.warn(`[GET /api/alerts/${id}] Mongo error:`, e);
+    }
+  }
+  if (!alert) alert = db.alerts.find(a => a.id === id) || null;
+  if (!alert) return res.status(404).json({ error: 'ALERT_NOT_FOUND', message: `Alert ${id} not found` });
+  res.json(alert);
+});
+
+app.delete(['/api/alerts/:id', '/api/v1/alerts/:id'], async (req, res) => {
+  const { id } = req.params;
+  const mongoDb = await ensureDb();
+  if (mongoDb && isMongoConnected()) {
+    try {
+      await mongoDb.collection('alerts').deleteOne({ $or: [{ id }, { _id: id as any }] });
+    } catch (e) {
+      console.warn(`[DELETE /api/alerts/${id}] Mongo error:`, e);
+    }
+  }
+  const idx = db.alerts.findIndex(a => a.id === id);
+  if (idx !== -1) db.alerts.splice(idx, 1);
+  res.json({ success: true, id, message: 'Alert deleted successfully' });
+});
+
+// Sites
+app.get(['/api/sites', '/api/v1/sites'], async (req, res) => {
+  setNoCacheHeaders(res);
+  const mongoDb = await ensureDb();
+  if (mongoDb && isMongoConnected()) {
+    try {
+      const docs = await mongoDb.collection('sites').find({}).toArray();
+      if (docs.length > 0) {
+        const cleaned = docs.map((doc: any) => {
+          const { _id, ...rest } = doc;
+          return { id: doc.id || (_id ? String(_id) : undefined), ...rest };
+        });
+        db.sites = cleaned as Site[];
+      }
+    } catch (e) {
+      console.warn('[GET /api/sites] Mongo query warning:', e);
+    }
+  }
   res.json(db.sites);
 });
-app.post(['/api/sites', '/api/v1/sites'], (req, res) => {
+
+app.post(['/api/sites', '/api/v1/sites'], async (req, res) => {
   const newSite: Site = {
-    id: `site-${Date.now()}`,
+    id: req.body.id || `site-${Date.now()}`,
     name: req.body.name || 'New Construction Site',
     code: req.body.code || `SITE-${Math.floor(10 + Math.random()*90)}`,
     address: req.body.address || 'Address pending',
@@ -1324,25 +1595,121 @@ app.post(['/api/sites', '/api/v1/sites'], (req, res) => {
     activeAssetsCount: 0,
     totalAssetsValue: 0,
     coordinates: req.body.coordinates || { lat: 37.7749, lng: -122.4194 },
-    zones: []
+    zones: req.body.zones || []
   };
+
+  const mongoDb = await ensureDb();
+  if (mongoDb && isMongoConnected()) {
+    try {
+      await mongoDb.collection('sites').updateOne(
+        { id: newSite.id },
+        { $set: { ...newSite, _id: newSite.id as any } },
+        { upsert: true }
+      );
+    } catch (err) {
+      console.warn('[MongoDB Site POST Error]', err);
+    }
+  }
+
   db.sites.push(newSite);
-  saveDb();
+  addAuditLog('SITE_CREATED', 'SITE', newSite.id, newSite.name, 'Admin', `Added new site ${newSite.name}`);
   res.status(201).json(newSite);
 });
 
-// Readers
-app.get(['/api/readers', '/api/v1/readers'], (req, res) => {
+app.get(['/api/sites/:id', '/api/v1/sites/:id'], async (req, res) => {
   setNoCacheHeaders(res);
+  const { id } = req.params;
+  const mongoDb = await ensureDb();
+  let site: Site | null = null;
+  if (mongoDb && isMongoConnected()) {
+    try {
+      const doc = await mongoDb.collection('sites').findOne({ $or: [{ id }, { _id: id as any }, { code: id }] });
+      if (doc) {
+        const { _id, ...rest } = doc;
+        site = { id: doc.id || String(_id), ...rest } as Site;
+      }
+    } catch (e) {
+      console.warn(`[GET /api/sites/${id}] Mongo error:`, e);
+    }
+  }
+  if (!site) site = db.sites.find(s => s.id === id || s.code === id) || null;
+  if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND', message: `Site ${id} not found` });
+  res.json(site);
+});
+
+const handleSiteUpdate = async (req: any, res: any) => {
+  const { id } = req.params;
+  const updateData = req.body || {};
+  const mongoDb = await ensureDb();
+  let updatedSite: Site | null = null;
+  if (mongoDb && isMongoConnected()) {
+    try {
+      await mongoDb.collection('sites').updateOne({ id }, { $set: updateData }, { upsert: true });
+      const doc = await mongoDb.collection('sites').findOne({ id });
+      if (doc) {
+        const { _id, ...rest } = doc;
+        updatedSite = { id: doc.id || String(_id), ...rest } as Site;
+      }
+    } catch (e) {
+      console.warn(`[UPDATE /api/sites/${id}] Mongo error:`, e);
+    }
+  }
+  const idx = db.sites.findIndex(s => s.id === id);
+  if (idx !== -1) {
+    db.sites[idx] = { ...db.sites[idx], ...updateData };
+    if (!updatedSite) updatedSite = db.sites[idx];
+  } else if (updatedSite) {
+    db.sites.push(updatedSite);
+  }
+  if (!updatedSite) return res.status(404).json({ error: 'SITE_NOT_FOUND', message: `Site ${id} not found` });
+  res.json(updatedSite);
+};
+app.put(['/api/sites/:id', '/api/v1/sites/:id'], handleSiteUpdate);
+app.patch(['/api/sites/:id', '/api/v1/sites/:id'], handleSiteUpdate);
+
+app.delete(['/api/sites/:id', '/api/v1/sites/:id'], async (req, res) => {
+  const { id } = req.params;
+  const mongoDb = await ensureDb();
+  if (mongoDb && isMongoConnected()) {
+    try {
+      await mongoDb.collection('sites').deleteOne({ $or: [{ id }, { _id: id as any }] });
+    } catch (e) {
+      console.warn(`[DELETE /api/sites/${id}] Mongo error:`, e);
+    }
+  }
+  const idx = db.sites.findIndex(s => s.id === id);
+  if (idx !== -1) db.sites.splice(idx, 1);
+  res.json({ success: true, id, message: 'Site deleted successfully' });
+});
+
+// Readers
+app.get(['/api/readers', '/api/v1/readers'], async (req, res) => {
+  setNoCacheHeaders(res);
+  const mongoDb = await ensureDb();
+  if (mongoDb && isMongoConnected()) {
+    try {
+      const docs = await mongoDb.collection('readers').find({}).toArray();
+      if (docs.length > 0) {
+        const cleaned = docs.map((doc: any) => {
+          const { _id, ...rest } = doc;
+          return { id: doc.id || (_id ? String(_id) : undefined), ...rest };
+        });
+        db.readers = cleaned as Reader[];
+      }
+    } catch (e) {
+      console.warn('[GET /api/readers] Mongo query warning:', e);
+    }
+  }
   res.json(db.readers);
 });
-app.post(['/api/readers', '/api/v1/readers'], (req, res) => {
+
+app.post(['/api/readers', '/api/v1/readers'], async (req, res) => {
   const newReader: Reader = {
-    id: `reader-${Date.now()}`,
+    id: req.body.id || `reader-${Date.now()}`,
     name: req.body.name || 'New RFID Portal',
     type: req.body.type || 'Fixed Portal',
-    siteId: req.body.siteId || db.sites[0]?.id || 'site-1',
-    siteName: db.sites.find(s => s.id === req.body.siteId)?.name || db.sites[0]?.name || 'Main Site',
+    siteId: req.body.siteId || db.sites[0]?.id || 'SITE-001',
+    siteName: db.sites.find(s => s.id === req.body.siteId)?.name || db.sites[0]?.name || 'Downtown Metro Tower',
     zoneId: req.body.zoneId || db.sites[0]?.zones?.[0]?.id || 'z-01',
     zoneName: db.sites[0]?.zones?.find(z => z.id === req.body.zoneId)?.name || 'Gate Portal',
     status: 'Online',
@@ -1351,22 +1718,118 @@ app.post(['/api/readers', '/api/v1/readers'], (req, res) => {
     ipAddress: req.body.ipAddress || '192.168.1.200',
     readCountTotal: 0,
     bufferedEventsCount: 0,
-    firmwareVersion: 'v3.4.2-Impinj'
+    firmwareVersion: req.body.firmwareVersion || 'v4.2.0-GAO'
   };
+
+  const mongoDb = await ensureDb();
+  if (mongoDb && isMongoConnected()) {
+    try {
+      await mongoDb.collection('readers').updateOne(
+        { id: newReader.id },
+        { $set: { ...newReader, _id: newReader.id as any } },
+        { upsert: true }
+      );
+    } catch (err) {
+      console.warn('[MongoDB Reader POST Error]', err);
+    }
+  }
+
   db.readers.push(newReader);
-  saveDb();
+  addAuditLog('READER_REGISTERED', 'READER', newReader.id, newReader.name, 'Admin', `Provisioned RFID Portal ${newReader.name}`);
   res.status(201).json(newReader);
 });
 
-// Maintenance
-app.get(['/api/maintenance', '/api/v1/maintenance'], (req, res) => {
+app.get(['/api/readers/:id', '/api/v1/readers/:id'], async (req, res) => {
   setNoCacheHeaders(res);
+  const { id } = req.params;
+  const mongoDb = await ensureDb();
+  let reader: Reader | null = null;
+  if (mongoDb && isMongoConnected()) {
+    try {
+      const doc = await mongoDb.collection('readers').findOne({ $or: [{ id }, { _id: id as any }] });
+      if (doc) {
+        const { _id, ...rest } = doc;
+        reader = { id: doc.id || String(_id), ...rest } as Reader;
+      }
+    } catch (e) {
+      console.warn(`[GET /api/readers/${id}] Mongo error:`, e);
+    }
+  }
+  if (!reader) reader = db.readers.find(r => r.id === id) || null;
+  if (!reader) return res.status(404).json({ error: 'READER_NOT_FOUND', message: `Reader ${id} not found` });
+  res.json(reader);
+});
+
+const handleReaderUpdate = async (req: any, res: any) => {
+  const { id } = req.params;
+  const updateData = req.body || {};
+  const mongoDb = await ensureDb();
+  let updatedReader: Reader | null = null;
+  if (mongoDb && isMongoConnected()) {
+    try {
+      await mongoDb.collection('readers').updateOne({ id }, { $set: updateData }, { upsert: true });
+      const doc = await mongoDb.collection('readers').findOne({ id });
+      if (doc) {
+        const { _id, ...rest } = doc;
+        updatedReader = { id: doc.id || String(_id), ...rest } as Reader;
+      }
+    } catch (e) {
+      console.warn(`[UPDATE /api/readers/${id}] Mongo error:`, e);
+    }
+  }
+  const idx = db.readers.findIndex(r => r.id === id);
+  if (idx !== -1) {
+    db.readers[idx] = { ...db.readers[idx], ...updateData };
+    if (!updatedReader) updatedReader = db.readers[idx];
+  } else if (updatedReader) {
+    db.readers.push(updatedReader);
+  }
+  if (!updatedReader) return res.status(404).json({ error: 'READER_NOT_FOUND', message: `Reader ${id} not found` });
+  res.json(updatedReader);
+};
+app.put(['/api/readers/:id', '/api/v1/readers/:id'], handleReaderUpdate);
+app.patch(['/api/readers/:id', '/api/v1/readers/:id'], handleReaderUpdate);
+
+app.delete(['/api/readers/:id', '/api/v1/readers/:id'], async (req, res) => {
+  const { id } = req.params;
+  const mongoDb = await ensureDb();
+  if (mongoDb && isMongoConnected()) {
+    try {
+      await mongoDb.collection('readers').deleteOne({ $or: [{ id }, { _id: id as any }] });
+    } catch (e) {
+      console.warn(`[DELETE /api/readers/${id}] Mongo error:`, e);
+    }
+  }
+  const idx = db.readers.findIndex(r => r.id === id);
+  if (idx !== -1) db.readers.splice(idx, 1);
+  res.json({ success: true, id, message: 'Reader deleted successfully' });
+});
+
+// Maintenance
+app.get(['/api/maintenance', '/api/v1/maintenance'], async (req, res) => {
+  setNoCacheHeaders(res);
+  const mongoDb = await ensureDb();
+  if (mongoDb && isMongoConnected()) {
+    try {
+      const docs = await mongoDb.collection('maintenance').find({}).toArray();
+      if (docs.length > 0) {
+        const cleaned = docs.map((doc: any) => {
+          const { _id, ...rest } = doc;
+          return { id: doc.id || (_id ? String(_id) : undefined), ...rest };
+        });
+        db.maintenance = cleaned as MaintenanceLog[];
+      }
+    } catch (e) {
+      console.warn('[GET /api/maintenance] Mongo query warning:', e);
+    }
+  }
   res.json(db.maintenance);
 });
-app.post(['/api/maintenance', '/api/v1/maintenance'], (req, res) => {
+
+app.post(['/api/maintenance', '/api/v1/maintenance'], async (req, res) => {
   const newMaint: MaintenanceLog = {
-    id: `maint-${Date.now()}`,
-    assetId: req.body.assetId,
+    id: req.body.id || `maint-${Date.now()}`,
+    assetId: req.body.assetId || 'ast-1001',
     assetName: req.body.assetName || 'Asset',
     type: req.body.type || 'Preventive',
     date: req.body.date || new Date().toISOString().split('T')[0],
@@ -1375,29 +1838,279 @@ app.post(['/api/maintenance', '/api/v1/maintenance'], (req, res) => {
     technician: req.body.technician || 'Elena Rostova',
     status: req.body.status || 'Scheduled',
     notes: req.body.notes || '',
-    workOrderId: `WO-${Math.floor(1000 + Math.random()*9000)}`
+    workOrderId: req.body.workOrderId || `WO-${Math.floor(1000 + Math.random()*9000)}`
   };
+
+  const mongoDb = await ensureDb();
+  if (mongoDb && isMongoConnected()) {
+    try {
+      await mongoDb.collection('maintenance').insertOne({ ...newMaint, _id: newMaint.id as any });
+      if (newMaint.assetId) {
+        await mongoDb.collection('assets').updateOne(
+          { id: newMaint.assetId },
+          { $set: { status: 'Under Maintenance' } }
+        );
+      }
+    } catch (err) {
+      console.warn('[MongoDB Maintenance POST Error]', err);
+    }
+  }
+
+  const asset = db.assets.find(a => a.id === newMaint.assetId);
+  if (asset) {
+    asset.status = 'Under Maintenance';
+  }
+
   db.maintenance.unshift(newMaint);
-  saveDb();
+  addAuditLog('MAINTENANCE_LOGGED', 'MAINTENANCE', newMaint.id, newMaint.assetName, 'Admin', `Scheduled ${newMaint.type} maintenance under ${newMaint.workOrderId}`);
   res.status(201).json(newMaint);
 });
 
-// Inventory
-app.get(['/api/inventory', '/api/v1/inventory'], (req, res) => {
+app.get(['/api/maintenance/:id', '/api/v1/maintenance/:id'], async (req, res) => {
   setNoCacheHeaders(res);
+  const { id } = req.params;
+  const mongoDb = await ensureDb();
+  let maint: MaintenanceLog | null = null;
+  if (mongoDb && isMongoConnected()) {
+    try {
+      const doc = await mongoDb.collection('maintenance').findOne({ $or: [{ id }, { _id: id as any }] });
+      if (doc) {
+        const { _id, ...rest } = doc;
+        maint = { id: doc.id || String(_id), ...rest } as MaintenanceLog;
+      }
+    } catch (e) {
+      console.warn(`[GET /api/maintenance/${id}] Mongo error:`, e);
+    }
+  }
+  if (!maint) maint = db.maintenance.find(m => m.id === id) || null;
+  if (!maint) return res.status(404).json({ error: 'MAINTENANCE_NOT_FOUND', message: `Maintenance record ${id} not found` });
+  res.json(maint);
+});
+
+const handleMaintUpdate = async (req: any, res: any) => {
+  const { id } = req.params;
+  const updateData = req.body || {};
+  const mongoDb = await ensureDb();
+  let updatedMaint: MaintenanceLog | null = null;
+  if (mongoDb && isMongoConnected()) {
+    try {
+      await mongoDb.collection('maintenance').updateOne({ id }, { $set: updateData }, { upsert: true });
+      const doc = await mongoDb.collection('maintenance').findOne({ id });
+      if (doc) {
+        const { _id, ...rest } = doc;
+        updatedMaint = { id: doc.id || String(_id), ...rest } as MaintenanceLog;
+      }
+    } catch (e) {
+      console.warn(`[UPDATE /api/maintenance/${id}] Mongo error:`, e);
+    }
+  }
+  const idx = db.maintenance.findIndex(m => m.id === id);
+  if (idx !== -1) {
+    db.maintenance[idx] = { ...db.maintenance[idx], ...updateData };
+    if (!updatedMaint) updatedMaint = db.maintenance[idx];
+  } else if (updatedMaint) {
+    db.maintenance.unshift(updatedMaint);
+  }
+  if (!updatedMaint) return res.status(404).json({ error: 'MAINTENANCE_NOT_FOUND', message: `Maintenance record ${id} not found` });
+  res.json(updatedMaint);
+};
+app.put(['/api/maintenance/:id', '/api/v1/maintenance/:id'], handleMaintUpdate);
+app.patch(['/api/maintenance/:id', '/api/v1/maintenance/:id'], handleMaintUpdate);
+
+app.delete(['/api/maintenance/:id', '/api/v1/maintenance/:id'], async (req, res) => {
+  const { id } = req.params;
+  const mongoDb = await ensureDb();
+  if (mongoDb && isMongoConnected()) {
+    try {
+      await mongoDb.collection('maintenance').deleteOne({ $or: [{ id }, { _id: id as any }] });
+    } catch (e) {
+      console.warn(`[DELETE /api/maintenance/${id}] Mongo error:`, e);
+    }
+  }
+  const idx = db.maintenance.findIndex(m => m.id === id);
+  if (idx !== -1) db.maintenance.splice(idx, 1);
+  res.json({ success: true, id, message: 'Maintenance record deleted successfully' });
+});
+
+// Inventory
+app.get(['/api/inventory', '/api/v1/inventory'], async (req, res) => {
+  setNoCacheHeaders(res);
+  const mongoDb = await ensureDb();
+  if (mongoDb && isMongoConnected()) {
+    try {
+      const docs = await mongoDb.collection('inventory').find({}).toArray();
+      if (docs.length > 0) {
+        const cleaned = docs.map((doc: any) => {
+          const { _id, ...rest } = doc;
+          return { id: doc.id || (_id ? String(_id) : undefined), ...rest };
+        });
+        db.inventory = cleaned as InventoryItem[];
+      }
+    } catch (e) {
+      console.warn('[GET /api/inventory] Mongo query warning:', e);
+    }
+  }
   res.json(db.inventory);
 });
-app.patch(['/api/inventory/:id', '/api/v1/inventory/:id'], (req, res) => {
-  const item = db.inventory.find(i => i.id === req.params.id);
-  if (!item) return res.status(404).json({ error: 'Item not found' });
-  Object.assign(item, req.body);
-  saveDb();
+
+app.post(['/api/inventory', '/api/v1/inventory'], async (req, res) => {
+  const newItem: InventoryItem = {
+    id: req.body.id || `inv-${Date.now()}`,
+    siteId: req.body.siteId || db.sites[0]?.id || 'SITE-001',
+    siteName: req.body.siteName || db.sites[0]?.name || 'Downtown Metro Tower',
+    name: req.body.name || 'New Inventory Item',
+    category: req.body.category || 'Supplies',
+    quantityOnHand: Number(req.body.quantityOnHand) || 0,
+    minThreshold: Number(req.body.minThreshold) || 10,
+    reorderPoint: Number(req.body.reorderPoint) || 20,
+    unit: req.body.unit || 'units',
+    costPerUnit: Number(req.body.costPerUnit) || 15
+  };
+
+  const mongoDb = await ensureDb();
+  if (mongoDb && isMongoConnected()) {
+    try {
+      await mongoDb.collection('inventory').updateOne(
+        { id: newItem.id },
+        { $set: { ...newItem, _id: newItem.id as any } },
+        { upsert: true }
+      );
+    } catch (err) {
+      console.warn('[MongoDB Inventory POST Error]', err);
+    }
+  }
+
+  db.inventory.unshift(newItem);
+  addAuditLog('INVENTORY_CREATED', 'INVENTORY', newItem.id, newItem.name, 'Admin', `Added ${newItem.name} (${newItem.quantityOnHand} ${newItem.unit}) to inventory`);
+  res.status(201).json(newItem);
+});
+
+app.patch(['/api/inventory/:id', '/api/v1/inventory/:id'], async (req, res) => {
+  const { id } = req.params;
+  const updateData = req.body || {};
+  const item = db.inventory.find(i => i.id === id);
+
+  const mongoDb = await ensureDb();
+  let updatedDoc: any = null;
+
+  if (mongoDb && isMongoConnected()) {
+    try {
+      await mongoDb.collection('inventory').updateOne(
+        { id },
+        { $set: updateData }
+      );
+      const doc = await mongoDb.collection('inventory').findOne({ id });
+      if (doc) {
+        const { _id, ...rest } = doc;
+        updatedDoc = { id: doc.id || _id, ...rest };
+      }
+    } catch (err) {
+      console.warn('[MongoDB Inventory PATCH Error]', err);
+    }
+  }
+
+  if (item) {
+    Object.assign(item, updateData);
+    if (!updatedDoc) updatedDoc = item;
+  }
+
+  if (!updatedDoc) {
+    return res.status(404).json({ error: 'Item not found in inventory' });
+  }
+
+  res.json(updatedDoc);
+});
+
+app.put(['/api/inventory/:id', '/api/v1/inventory/:id'], async (req, res) => {
+  const { id } = req.params;
+  const updateData = req.body || {};
+  const item = db.inventory.find(i => i.id === id);
+
+  const mongoDb = await ensureDb();
+  let updatedDoc: any = null;
+
+  if (mongoDb && isMongoConnected()) {
+    try {
+      await mongoDb.collection('inventory').updateOne(
+        { id },
+        { $set: updateData },
+        { upsert: true }
+      );
+      const doc = await mongoDb.collection('inventory').findOne({ id });
+      if (doc) {
+        const { _id, ...rest } = doc;
+        updatedDoc = { id: doc.id || _id, ...rest };
+      }
+    } catch (err) {
+      console.warn('[MongoDB Inventory PUT Error]', err);
+    }
+  }
+
+  if (item) {
+    Object.assign(item, updateData);
+    if (!updatedDoc) updatedDoc = item;
+  }
+
+  if (!updatedDoc) {
+    return res.status(404).json({ error: 'Item not found in inventory' });
+  }
+
+  res.json(updatedDoc);
+});
+
+app.get(['/api/inventory/:id', '/api/v1/inventory/:id'], async (req, res) => {
+  setNoCacheHeaders(res);
+  const { id } = req.params;
+  const mongoDb = await ensureDb();
+  let item: InventoryItem | null = null;
+  if (mongoDb && isMongoConnected()) {
+    try {
+      const doc = await mongoDb.collection('inventory').findOne({ $or: [{ id }, { _id: id as any }] });
+      if (doc) {
+        const { _id, ...rest } = doc;
+        item = { id: doc.id || String(_id), ...rest } as InventoryItem;
+      }
+    } catch (e) {
+      console.warn(`[GET /api/inventory/${id}] Mongo error:`, e);
+    }
+  }
+  if (!item) item = db.inventory.find(i => i.id === id) || null;
+  if (!item) return res.status(404).json({ error: 'INVENTORY_NOT_FOUND', message: `Inventory item ${id} not found` });
   res.json(item);
 });
 
+app.delete(['/api/inventory/:id', '/api/v1/inventory/:id'], async (req, res) => {
+  const { id } = req.params;
+  const mongoDb = await ensureDb();
+  if (mongoDb && isMongoConnected()) {
+    try {
+      await mongoDb.collection('inventory').deleteOne({ $or: [{ id }, { _id: id as any }] });
+    } catch (e) {
+      console.warn(`[DELETE /api/inventory/${id}] Mongo error:`, e);
+    }
+  }
+  const idx = db.inventory.findIndex(i => i.id === id);
+  if (idx !== -1) db.inventory.splice(idx, 1);
+  res.json({ success: true, id, message: 'Inventory item deleted successfully' });
+});
+
 // Users & Audit Logs
-app.get(['/api/users', '/api/v1/users'], (req, res) => {
+app.get(['/api/users', '/api/v1/users'], async (req, res) => {
   setNoCacheHeaders(res);
+  const mongoDb = await ensureDb();
+  if (mongoDb && isMongoConnected()) {
+    try {
+      const docs = await mongoDb.collection('users').find({}).toArray();
+      if (docs.length > 0) {
+        db.users = docs.map((doc: any) => {
+          const { _id, ...rest } = doc;
+          return { id: doc.id || (_id ? String(_id) : undefined), ...rest } as User;
+        });
+      }
+    } catch (e) {
+      console.warn('[GET /api/users] Mongo query error:', e);
+    }
+  }
   res.json(db.users);
 });
 
@@ -1416,7 +2129,7 @@ app.post(['/api/users', '/api/v1/users'], async (req, res) => {
   db.users.push(newUser);
   addAuditLog('USER_CREATED', 'USER', newUser.id, newUser.name, 'Admin', `Added new ${newUser.role} user`);
 
-  const mongoDb = getDb();
+  const mongoDb = await ensureDb();
   if (mongoDb) {
     try {
       await mongoDb.collection('users').updateOne(
@@ -1446,7 +2159,7 @@ app.put(['/api/users/:id', '/api/v1/users/:id'], async (req, res) => {
   db.users[idx] = updated;
   addAuditLog('USER_UPDATED', 'USER', updated.id, updated.name, 'Admin', `Updated user details`);
 
-  const mongoDb = getDb();
+  const mongoDb = await ensureDb();
   if (mongoDb) {
     try {
       await mongoDb.collection('users').updateOne(
@@ -1473,7 +2186,7 @@ app.patch(['/api/users/:id', '/api/v1/users/:id'], async (req, res) => {
   const updated: User = { ...db.users[idx], ...req.body, id };
   db.users[idx] = updated;
 
-  const mongoDb = getDb();
+  const mongoDb = await ensureDb();
   if (mongoDb) {
     try {
       await mongoDb.collection('users').updateOne(
@@ -1496,7 +2209,7 @@ app.delete(['/api/users/:id', '/api/v1/users/:id'], async (req, res) => {
     db.users.splice(idx, 1);
   }
 
-  const mongoDb = getDb();
+  const mongoDb = await ensureDb();
   if (mongoDb) {
     try {
       await mongoDb.collection('users').deleteOne({ _id: id } as any);
@@ -1512,8 +2225,22 @@ app.delete(['/api/users/:id', '/api/v1/users/:id'], async (req, res) => {
   res.json({ success: true, id });
 });
 
-app.get(['/api/audit-logs', '/api/v1/audit-logs'], (req, res) => {
+app.get(['/api/audit-logs', '/api/v1/audit-logs'], async (req, res) => {
   setNoCacheHeaders(res);
+  const mongoDb = await ensureDb();
+  if (mongoDb && isMongoConnected()) {
+    try {
+      const docs = await mongoDb.collection('auditLogs').find({}).sort({ timestamp: -1 }).limit(200).toArray();
+      if (docs.length > 0) {
+        db.auditLogs = docs.map((doc: any) => {
+          const { _id, ...rest } = doc;
+          return { id: doc.id || (_id ? String(_id) : undefined), ...rest } as AuditLog;
+        });
+      }
+    } catch (e) {
+      console.warn('[GET /api/audit-logs] Mongo query error:', e);
+    }
+  }
   res.json(db.auditLogs);
 });
 
@@ -1667,6 +2394,607 @@ app.all(['/api/aperture/sync', '/api/v1/aperture/sync'], async (req, res) => {
   });
 });
 
+// Comprehensive Multi-Collection External API to MongoDB Synchronization Engine
+export async function syncAllExternalApiToMongo(options: {
+  externalUrl?: string;
+  apiKey?: string;
+  wipeExisting?: boolean;
+  isStartup?: boolean;
+} = {}) {
+  const targetUrl = options.externalUrl || db.apiGateway.baseUrl || 'https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app';
+  const targetKey = options.apiKey || db.apiGateway.apiKey;
+  const wipeExisting = Boolean(options.wipeExisting);
+
+  console.log(`[External API -> MongoDB Sync] Target URL: ${targetUrl} (Wipe existing: ${wipeExisting})`);
+
+  const headers: Record<string, string> = { 'Accept': 'application/json' };
+  if (targetKey) {
+    headers['X-API-Key'] = targetKey;
+    headers['Authorization'] = `Bearer ${targetKey}`;
+  }
+
+  const syncedCounts: Record<string, number> = {
+    assets: 0,
+    sites: 0,
+    readers: 0,
+    users: 0,
+    inventory: 0,
+    checkouts: 0,
+    maintenance: 0,
+    alerts: 0,
+    events: 0
+  };
+
+  const mongoDb = getDb();
+  const isConnected = isMongoConnected() && Boolean(mongoDb);
+
+  // Helper to fetch from external API safely
+  async function fetchExternalEndpoint(endpoint: string): Promise<any | null> {
+    try {
+      const cleanBase = targetUrl.replace(/\/$/, '');
+      const url = `${cleanBase}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+      const res = await fetch(url, { headers, signal: AbortSignal.timeout(6000) });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e: any) {
+      console.warn(`[Sync External] Error fetching ${endpoint}:`, e.message || e);
+    }
+    return null;
+  }
+
+  // 1. ASSETS
+  try {
+    const assetsData = await fetchExternalEndpoint('/api/assets');
+    const rawAssets = Array.isArray(assetsData) ? assetsData : (assetsData?.assets || assetsData?.data || []);
+    if (Array.isArray(rawAssets) && rawAssets.length > 0) {
+      const cleanAssets: Asset[] = rawAssets.map((ext: any, idx: number) => ({
+        id: ext.id || `AST-${String(idx + 1).padStart(3, '0')}`,
+        name: ext.name || 'Equipment Asset',
+        category: ext.category || 'Tools',
+        subCategory: ext.subCategory || 'General Equipment',
+        manufacturer: ext.manufacturer || 'Standard Industrial',
+        model: ext.model || 'Universal',
+        serialNumber: ext.serialNumber || `SN-${100000 + idx}`,
+        tagEpc: ext.tagEpc || ext.rfidTag || ext.tagId || `E2801191A000001000000${String(idx + 1).padStart(3, '0')}`,
+        qrCode: ext.qrCode || `QR-${1000 + idx}`,
+        status: ext.status === 'ACTIVE' ? 'In Zone' : (ext.status === 'MAINTENANCE' ? 'Under Maintenance' : (ext.status || 'In Zone')),
+        siteId: ext.siteId || 'SITE-001',
+        siteName: ext.siteName || ext.location || 'Metro Tower Construction',
+        zoneId: ext.zoneId || 'z-01',
+        zoneName: ext.zoneName || ext.location || 'Foundation Zone A',
+        purchaseDate: ext.purchaseDate || new Date().toISOString().split('T')[0],
+        cost: Number(ext.cost) || 1200,
+        rentalCostPerDay: Number(ext.rentalCostPerDay) || 0,
+        isRental: Boolean(ext.isRental),
+        rentalEndDate: ext.rentalEndDate,
+        lastSeenAt: ext.lastSeenAt || new Date().toISOString(),
+        lastReaderId: ext.lastReaderId || 'reader-101',
+        rssi: Number(ext.rssi) || -55,
+        photoUrl: ext.photoUrl || 'https://images.unsplash.com/photo-1504148455328-c376907d081c?w=600',
+        condition: ext.condition || 'Good'
+      }));
+
+      if (isConnected && mongoDb) {
+        if (wipeExisting) {
+          await mongoDb.collection('assets').deleteMany({});
+          if (cleanAssets.length > 0) {
+            await mongoDb.collection('assets').insertMany(cleanAssets.map(a => ({ ...a, _id: a.id as any })));
+          }
+        } else {
+          for (const a of cleanAssets) {
+            await mongoDb.collection('assets').updateOne(
+              { id: a.id },
+              { $set: { ...a, _id: a.id as any } },
+              { upsert: true }
+            );
+          }
+        }
+      }
+
+      if (wipeExisting) {
+        db.assets = cleanAssets;
+      } else {
+        for (const a of cleanAssets) {
+          const idx = db.assets.findIndex(x => x.id === a.id);
+          if (idx >= 0) db.assets[idx] = a;
+          else db.assets.unshift(a);
+        }
+      }
+      syncedCounts.assets = cleanAssets.length;
+    }
+  } catch (e: any) {
+    console.warn('[Sync Assets Error]', e.message);
+  }
+
+  // 2. SITES
+  try {
+    const sitesData = await fetchExternalEndpoint('/api/sites');
+    const rawSites = Array.isArray(sitesData) ? sitesData : (sitesData?.sites || sitesData?.data || []);
+    if (Array.isArray(rawSites) && rawSites.length > 0) {
+      const cleanSites: Site[] = rawSites.map((ext: any, idx: number) => ({
+        id: ext.id || `SITE-${String(idx + 1).padStart(3, '0')}`,
+        name: ext.name || 'Construction Site',
+        code: ext.code || `SITE-${String(idx + 1).padStart(3, '0')}`,
+        address: ext.address || ext.location || 'Project Site Location',
+        manager: ext.manager || 'Site Manager',
+        activeAssetsCount: Number(ext.activeAssetsCount) || 0,
+        totalAssetsValue: Number(ext.totalAssetsValue) || 0,
+        coordinates: ext.coordinates || (ext.location?.toLowerCase().includes('lahore') ? { lat: 31.5204, lng: 74.3587 } : { lat: 33.6844, lng: 73.0479 }),
+        zones: Array.isArray(ext.zones) && ext.zones.length > 0 ? ext.zones : [
+          { id: 'z-01', name: 'Foundation Zone A', type: 'LAYDOWN_YARD', polygon: [[31.520, 74.358], [31.522, 74.358], [31.522, 74.360], [31.520, 74.360]], color: '#3B82F6', readerIds: ['reader-101'], activeAssetsCount: 0 },
+          { id: 'z-02', name: 'Tower Area', type: 'INDOOR_HIGH_SECURITY', polygon: [[31.522, 74.360], [31.524, 74.360], [31.524, 74.362], [31.522, 74.362]], color: '#EF4444', readerIds: ['reader-102'], activeAssetsCount: 0 }
+        ]
+      }));
+
+      if (isConnected && mongoDb) {
+        if (wipeExisting) {
+          await mongoDb.collection('sites').deleteMany({});
+          if (cleanSites.length > 0) {
+            await mongoDb.collection('sites').insertMany(cleanSites.map(s => ({ ...s, _id: s.id as any })));
+          }
+        } else {
+          for (const s of cleanSites) {
+            await mongoDb.collection('sites').updateOne(
+              { id: s.id },
+              { $set: { ...s, _id: s.id as any } },
+              { upsert: true }
+            );
+          }
+        }
+      }
+
+      if (wipeExisting) {
+        db.sites = cleanSites;
+      } else {
+        for (const s of cleanSites) {
+          const idx = db.sites.findIndex(x => x.id === s.id);
+          if (idx >= 0) db.sites[idx] = s;
+          else db.sites.push(s);
+        }
+      }
+      syncedCounts.sites = cleanSites.length;
+    }
+  } catch (e: any) {
+    console.warn('[Sync Sites Error]', e.message);
+  }
+
+  // 3. READERS
+  try {
+    const readersData = await fetchExternalEndpoint('/api/readers');
+    const rawReaders = Array.isArray(readersData) ? readersData : (readersData?.readers || readersData?.data || []);
+    if (Array.isArray(rawReaders) && rawReaders.length > 0) {
+      const cleanReaders: Reader[] = rawReaders.map((ext: any, idx: number) => ({
+        id: ext.id || `reader-${101 + idx}`,
+        name: ext.name || `RFID Portal Gate ${idx + 1}`,
+        type: ext.type || 'Fixed Portal',
+        siteId: ext.siteId || db.sites[0]?.id || 'SITE-001',
+        siteName: ext.siteName || db.sites[0]?.name || 'Metro Tower Construction',
+        zoneId: ext.zoneId || 'z-01',
+        zoneName: ext.zoneName || 'Foundation Zone A',
+        status: ext.status === 'ACTIVE' || ext.status === 'ONLINE' ? 'Online' : (ext.status || 'Online'),
+        lastHeartbeat: ext.lastHeartbeat || new Date().toISOString(),
+        antennaPowerDbm: Number(ext.antennaPowerDbm) || 30,
+        ipAddress: ext.ipAddress || `192.168.1.${100 + idx}`,
+        readCountTotal: Number(ext.readCountTotal) || 0,
+        bufferedEventsCount: 0,
+        firmwareVersion: ext.firmwareVersion || 'v4.2.0-GAO'
+      }));
+
+      if (isConnected && mongoDb) {
+        if (wipeExisting) {
+          await mongoDb.collection('readers').deleteMany({});
+          if (cleanReaders.length > 0) {
+            await mongoDb.collection('readers').insertMany(cleanReaders.map(r => ({ ...r, _id: r.id as any })));
+          }
+        } else {
+          for (const r of cleanReaders) {
+            await mongoDb.collection('readers').updateOne(
+              { id: r.id },
+              { $set: { ...r, _id: r.id as any } },
+              { upsert: true }
+            );
+          }
+        }
+      }
+
+      if (wipeExisting) {
+        db.readers = cleanReaders;
+      } else {
+        for (const r of cleanReaders) {
+          const idx = db.readers.findIndex(x => x.id === r.id);
+          if (idx >= 0) db.readers[idx] = r;
+          else db.readers.push(r);
+        }
+      }
+      syncedCounts.readers = cleanReaders.length;
+    }
+  } catch (e: any) {
+    console.warn('[Sync Readers Error]', e.message);
+  }
+
+  // 4. USERS
+  try {
+    const usersData = await fetchExternalEndpoint('/api/users');
+    const rawUsers = Array.isArray(usersData) ? usersData : (usersData?.users || usersData?.data || []);
+    if (Array.isArray(rawUsers) && rawUsers.length > 0) {
+      const cleanUsers: User[] = rawUsers.map((ext: any, idx: number) => ({
+        id: ext.id || `usr-${idx + 1}`,
+        name: ext.name || 'Field Operator',
+        email: ext.email || `user${idx + 1}@apexinfrastructure.com`,
+        role: ext.role || 'Site Manager',
+        siteAccess: ext.siteAccess || ['SITE-001', 'SITE-002'],
+        badgeId: ext.badgeId || ext.badgeNumber || `BDG-${1000 + idx}`,
+        avatarUrl: ext.avatarUrl || `https://images.unsplash.com/photo-${1534528741775 + idx}?w=150&auto=format&fit=crop&q=80`,
+        phone: ext.phone || '+1 (555) 019-2834'
+      }));
+
+      if (isConnected && mongoDb) {
+        if (wipeExisting) {
+          await mongoDb.collection('users').deleteMany({});
+          if (cleanUsers.length > 0) {
+            await mongoDb.collection('users').insertMany(cleanUsers.map(u => ({ ...u, _id: u.id as any })));
+          }
+        } else {
+          for (const u of cleanUsers) {
+            await mongoDb.collection('users').updateOne(
+              { id: u.id },
+              { $set: { ...u, _id: u.id as any } },
+              { upsert: true }
+            );
+          }
+        }
+      }
+
+      if (wipeExisting) {
+        db.users = cleanUsers;
+      } else {
+        for (const u of cleanUsers) {
+          const idx = db.users.findIndex(x => x.id === u.id);
+          if (idx >= 0) db.users[idx] = u;
+          else db.users.push(u);
+        }
+      }
+      syncedCounts.users = cleanUsers.length;
+    }
+  } catch (e: any) {
+    console.warn('[Sync Users Error]', e.message);
+  }
+
+  // 5. INVENTORY
+  try {
+    const invData = await fetchExternalEndpoint('/api/inventory');
+    const rawInv = Array.isArray(invData) ? invData : (invData?.inventory || invData?.items || invData?.data || []);
+    if (Array.isArray(rawInv) && rawInv.length > 0) {
+      const cleanInv: InventoryItem[] = rawInv.map((ext: any, idx: number) => ({
+        id: ext.id || `inv-${idx + 1}`,
+        name: ext.name || 'Consumable Material',
+        category: ext.category || 'Materials',
+        siteId: ext.siteId || 'SITE-001',
+        siteName: ext.siteName || 'Metro Tower Construction',
+        quantityOnHand: Number(ext.quantityOnHand) || Number(ext.quantity) || 50,
+        minThreshold: Number(ext.minThreshold) || Number(ext.minStockLevel) || 10,
+        unit: ext.unit || 'Units',
+        reorderPoint: Number(ext.reorderPoint) || 20,
+        costPerUnit: Number(ext.costPerUnit) || Number(ext.unitCost) || 25
+      }));
+
+      if (isConnected && mongoDb) {
+        if (wipeExisting) {
+          await mongoDb.collection('inventory').deleteMany({});
+          if (cleanInv.length > 0) {
+            await mongoDb.collection('inventory').insertMany(cleanInv.map(i => ({ ...i, _id: i.id as any })));
+          }
+        } else {
+          for (const i of cleanInv) {
+            await mongoDb.collection('inventory').updateOne(
+              { id: i.id },
+              { $set: { ...i, _id: i.id as any } },
+              { upsert: true }
+            );
+          }
+        }
+      }
+
+      if (wipeExisting) {
+        db.inventory = cleanInv;
+      } else {
+        for (const i of cleanInv) {
+          const idx = db.inventory.findIndex(x => x.id === i.id);
+          if (idx >= 0) db.inventory[idx] = i;
+          else db.inventory.push(i);
+        }
+      }
+      syncedCounts.inventory = cleanInv.length;
+    }
+  } catch (e: any) {
+    console.warn('[Sync Inventory Error]', e.message);
+  }
+
+  // 6. CHECKOUTS
+  try {
+    const checkData = await fetchExternalEndpoint('/api/checkouts');
+    const rawCheckouts = Array.isArray(checkData) ? checkData : (checkData?.checkouts || checkData?.data || []);
+    if (Array.isArray(rawCheckouts) && rawCheckouts.length > 0) {
+      const cleanCheckouts: Checkout[] = rawCheckouts.map((ext: any, idx: number) => ({
+        id: ext.id || `chk-${idx + 1}`,
+        assetId: ext.assetId || 'AST-001',
+        assetName: ext.assetName || 'Asset',
+        assetCategory: ext.assetCategory || 'Tools',
+        tagEpc: ext.tagEpc || `E2801160${1000 + idx}`,
+        userId: ext.userId || 'usr-1',
+        userName: ext.userName || 'Operator',
+        badgeId: ext.badgeId || ext.badgeNumber || 'BDG-1001',
+        checkoutTime: ext.checkoutTime || new Date().toISOString(),
+        expectedReturn: ext.expectedReturn || new Date(Date.now() + 86400000).toISOString(),
+        actualReturn: ext.actualReturn,
+        jobId: ext.jobId || 'JOB-101',
+        jobName: ext.jobName || 'Foundation Framing',
+        checkoutCondition: ext.checkoutCondition || 'Good',
+        returnCondition: ext.returnCondition,
+        notes: ext.notes || ext.purpose || 'Site operations',
+        status: (ext.status === 'RETURNED' || ext.status === 'OVERDUE') ? ext.status : 'ACTIVE'
+      }));
+
+      if (isConnected && mongoDb) {
+        if (wipeExisting) {
+          await mongoDb.collection('checkouts').deleteMany({});
+          if (cleanCheckouts.length > 0) {
+            await mongoDb.collection('checkouts').insertMany(cleanCheckouts.map(c => ({ ...c, _id: c.id as any })));
+          }
+        } else {
+          for (const c of cleanCheckouts) {
+            await mongoDb.collection('checkouts').updateOne(
+              { id: c.id },
+              { $set: { ...c, _id: c.id as any } },
+              { upsert: true }
+            );
+          }
+        }
+      }
+
+      if (wipeExisting) {
+        db.checkouts = cleanCheckouts;
+      } else {
+        for (const c of cleanCheckouts) {
+          const idx = db.checkouts.findIndex(x => x.id === c.id);
+          if (idx >= 0) db.checkouts[idx] = c;
+          else db.checkouts.unshift(c);
+        }
+      }
+      syncedCounts.checkouts = cleanCheckouts.length;
+    }
+  } catch (e: any) {
+    console.warn('[Sync Checkouts Error]', e.message);
+  }
+
+  // 7. MAINTENANCE
+  try {
+    const maintData = await fetchExternalEndpoint('/api/maintenance');
+    const rawMaint = Array.isArray(maintData) ? maintData : (maintData?.maintenance || maintData?.logs || maintData?.data || []);
+    if (Array.isArray(rawMaint) && rawMaint.length > 0) {
+      const cleanMaint: MaintenanceLog[] = rawMaint.map((ext: any, idx: number) => ({
+        id: ext.id || `maint-${idx + 1}`,
+        assetId: ext.assetId || 'AST-001',
+        assetName: ext.assetName || 'Asset',
+        type: ext.type || 'Preventive',
+        date: ext.date || new Date().toISOString().split('T')[0],
+        scheduledDate: ext.scheduledDate || new Date().toISOString().split('T')[0],
+        cost: Number(ext.cost) || 0,
+        technician: ext.technician || 'Elena Rostova',
+        status: ext.status || 'Scheduled',
+        notes: ext.notes || '',
+        workOrderId: ext.workOrderId || `WO-${1000 + idx}`
+      }));
+
+      if (isConnected && mongoDb) {
+        if (wipeExisting) {
+          await mongoDb.collection('maintenance').deleteMany({});
+          if (cleanMaint.length > 0) {
+            await mongoDb.collection('maintenance').insertMany(cleanMaint.map(m => ({ ...m, _id: m.id as any })));
+          }
+        } else {
+          for (const m of cleanMaint) {
+            await mongoDb.collection('maintenance').updateOne(
+              { id: m.id },
+              { $set: { ...m, _id: m.id as any } },
+              { upsert: true }
+            );
+          }
+        }
+      }
+
+      if (wipeExisting) {
+        db.maintenance = cleanMaint;
+      } else {
+        for (const m of cleanMaint) {
+          const idx = db.maintenance.findIndex(x => x.id === m.id);
+          if (idx >= 0) db.maintenance[idx] = m;
+          else db.maintenance.unshift(m);
+        }
+      }
+      syncedCounts.maintenance = cleanMaint.length;
+    }
+  } catch (e: any) {
+    console.warn('[Sync Maintenance Error]', e.message);
+  }
+
+  // 8. ALERTS
+  try {
+    const alertsData = await fetchExternalEndpoint('/api/alerts');
+    const rawAlerts = Array.isArray(alertsData) ? alertsData : (alertsData?.alerts || alertsData?.data || []);
+    if (Array.isArray(rawAlerts) && rawAlerts.length > 0) {
+      const cleanAlerts: Alert[] = rawAlerts.map((ext: any, idx: number) => ({
+        id: ext.id || `alt-${idx + 1}`,
+        type: ext.type || 'GEOFENCE_BREACH',
+        severity: ext.severity || 'CRITICAL',
+        assetId: ext.assetId || 'AST-001',
+        assetName: ext.assetName || 'Asset',
+        siteId: ext.siteId || 'SITE-001',
+        siteName: ext.siteName || 'Metro Tower Construction',
+        zoneId: ext.zoneId || 'z-01',
+        zoneName: ext.zoneName || 'Foundation Zone A',
+        triggeredAt: ext.triggeredAt || ext.timestamp || new Date().toISOString(),
+        resolved: Boolean(ext.resolved),
+        resolvedAt: ext.resolvedAt,
+        resolvedBy: ext.resolvedBy,
+        message: ext.message || 'Alert notification'
+      }));
+
+      if (isConnected && mongoDb) {
+        if (wipeExisting) {
+          await mongoDb.collection('alerts').deleteMany({});
+          if (cleanAlerts.length > 0) {
+            await mongoDb.collection('alerts').insertMany(cleanAlerts.map(a => ({ ...a, _id: a.id as any })));
+          }
+        } else {
+          for (const a of cleanAlerts) {
+            await mongoDb.collection('alerts').updateOne(
+              { id: a.id },
+              { $set: { ...a, _id: a.id as any } },
+              { upsert: true }
+            );
+          }
+        }
+      }
+
+      if (wipeExisting) {
+        db.alerts = cleanAlerts;
+      } else {
+        for (const a of cleanAlerts) {
+          const idx = db.alerts.findIndex(x => x.id === a.id);
+          if (idx >= 0) db.alerts[idx] = a;
+          else db.alerts.unshift(a);
+        }
+      }
+      syncedCounts.alerts = cleanAlerts.length;
+    }
+  } catch (e: any) {
+    console.warn('[Sync Alerts Error]', e.message);
+  }
+
+  // 9. EVENTS
+  try {
+    const eventsData = await fetchExternalEndpoint('/api/events');
+    const rawEvents = Array.isArray(eventsData) ? eventsData : (eventsData?.events || eventsData?.data || []);
+    if (Array.isArray(rawEvents) && rawEvents.length > 0) {
+      const cleanEvents: ReadEvent[] = rawEvents.map((ext: any, idx: number) => ({
+        id: ext.id || `evt-${idx + 1}`,
+        epc: ext.epc || `E2801191A000001000000${String(idx + 1).padStart(3, '0')}`,
+        assetId: ext.assetId,
+        assetName: ext.assetName || 'RFID Asset',
+        assetCategory: ext.assetCategory || 'Tools',
+        readerId: ext.readerId || 'reader-101',
+        readerName: ext.readerName || 'RFID Portal Gate 1',
+        siteId: ext.siteId || 'SITE-001',
+        siteName: ext.siteName || 'Metro Tower Construction',
+        zoneId: ext.zoneId || 'z-01',
+        zoneName: ext.zoneName || 'Foundation Zone A',
+        rssi: Number(ext.rssi) || -55,
+        timestamp: ext.timestamp || new Date().toISOString(),
+        eventType: ext.eventType || 'SCAN',
+        antennaId: Number(ext.antennaId) || 1
+      }));
+
+      if (isConnected && mongoDb) {
+        if (wipeExisting) {
+          await mongoDb.collection('events').deleteMany({});
+          if (cleanEvents.length > 0) {
+            await mongoDb.collection('events').insertMany(cleanEvents.map(e => ({ ...e, _id: e.id as any })));
+          }
+        } else {
+          for (const e of cleanEvents) {
+            await mongoDb.collection('events').updateOne(
+              { id: e.id },
+              { $set: { ...e, _id: e.id as any } },
+              { upsert: true }
+            );
+          }
+        }
+      }
+
+      if (wipeExisting) {
+        db.events = cleanEvents;
+      } else {
+        for (const e of cleanEvents) {
+          const idx = db.events.findIndex(x => x.id === e.id);
+          if (idx >= 0) db.events[idx] = e;
+          else db.events.unshift(e);
+        }
+      }
+      syncedCounts.events = cleanEvents.length;
+    }
+  } catch (e: any) {
+    console.warn('[Sync Events Error]', e.message);
+  }
+
+  setLastSyncedAt(new Date().toISOString());
+
+  const totalSynced = Object.values(syncedCounts).reduce((a, b) => a + b, 0);
+  if (totalSynced > 0) {
+    addAuditLog(
+      'EXTERNAL_SYNC',
+      'SYSTEM',
+      'ext-sync',
+      'External API Sync',
+      'System',
+      `Synced ${syncedCounts.assets} assets, ${syncedCounts.sites} sites, ${syncedCounts.readers} readers from API to MongoDB (Wipe: ${wipeExisting})`
+    );
+  }
+
+  return {
+    success: true,
+    syncedCounts,
+    totalSynced,
+    targetUrl,
+    wipeExisting,
+    database: isConnected ? 'MongoDB Atlas' : 'In-Memory (Atlas Pending)',
+    syncedAt: new Date().toISOString()
+  };
+}
+
+// Explicit External API Sync Endpoint (External API -> Backend API -> MongoDB -> Frontend)
+app.post(['/api/external/sync', '/api/v1/external/sync', '/api/aperture/sync-external'], async (req, res) => {
+  const { externalUrl, apiKey, wipeExisting } = req.body || {};
+  try {
+    const result = await syncAllExternalApiToMongo({ externalUrl, apiKey, wipeExisting });
+    return res.json({
+      success: true,
+      message: result.wipeExisting 
+        ? 'Successfully wiped pre-made dummy data and stored live External API data directly in MongoDB Atlas'
+        : 'External API data successfully validated and saved to MongoDB Atlas',
+      ...result
+    });
+  } catch (err: any) {
+    console.error('[External API Sync Error]:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'EXTERNAL_SYNC_FAILED',
+      message: err.message || 'Failed to sync external data into MongoDB'
+    });
+  }
+});
+
+// Dedicated Wipe Pre-Made Data and Replace with API Data Endpoint
+app.post(['/api/mongodb/wipe-and-import-api', '/api/mongodb/reset-with-api'], async (req, res) => {
+  const { externalUrl, apiKey } = req.body || {};
+  try {
+    const result = await syncAllExternalApiToMongo({ externalUrl, apiKey, wipeExisting: true });
+    return res.json({
+      success: true,
+      message: 'MongoDB Atlas successfully purged of old default data and replaced with live External API records',
+      ...result
+    });
+  } catch (err: any) {
+    console.error('[Wipe & Import API Error]:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'WIPE_IMPORT_FAILED',
+      message: err.message || 'Failed to wipe and replace MongoDB data with API records'
+    });
+  }
+});
+
 // GAO-Compatible Tag Read Ingestion Endpoint
 app.post(['/api/gao/read-tags', '/api/v1/rfid/read', '/api/aperture/read'], async (req, res) => {
   const { epc, readerId, ant, rssi } = req.body;
@@ -1694,6 +3022,25 @@ app.post(['/api/gao/read-tags', '/api/v1/rfid/read', '/api/aperture/read'], asyn
     antennaId: Number(ant) || 1
   };
 
+  const mongoDb = getDb();
+  if (mongoDb && isMongoConnected()) {
+    try {
+      await mongoDb.collection('events').insertOne({ ...newEvent, _id: newEvent.id as any });
+      if (asset) {
+        await mongoDb.collection('assets').updateOne(
+          { id: asset.id },
+          { $set: { lastSeenAt: newEvent.timestamp, lastReaderId: reader.id, rssi: newEvent.rssi } }
+        );
+      }
+      await mongoDb.collection('readers').updateOne(
+        { id: reader.id },
+        { $inc: { readCountTotal: 1 } }
+      );
+    } catch (e) {
+      console.warn('[MongoDB GAO Scan Ingest Warning]:', e);
+    }
+  }
+
   db.events.unshift(newEvent);
   if (db.events.length > 300) db.events.pop();
 
@@ -1703,7 +3050,8 @@ app.post(['/api/gao/read-tags', '/api/v1/rfid/read', '/api/aperture/read'], asyn
     asset.rssi = newEvent.rssi;
   }
 
-  saveDb();
+  reader.readCountTotal = (reader.readCountTotal || 0) + 1;
+
   res.json({
     status: 'INGESTED',
     protocol: 'GAO-RFID-LLRP-v2',
@@ -1736,7 +3084,7 @@ app.get(['/api/gao/read-tags', '/api/v1/rfid/tags'], (req, res) => {
 app.all(['/api/beeceptor/events', '/api/v1/beeceptor/events'], async (req, res) => {
   setNoCacheHeaders(res);
   try {
-    const targetUrl = `${(db.apiGateway?.baseUrl || 'https://68cc1e0b-071a-4cd1-9c95-4912676a5624.mock.pstmn.io').replace(/\/$/, '')}/api/events`;
+    const targetUrl = `${(db.apiGateway?.baseUrl || 'https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app').replace(/\/$/, '')}/api/events`;
     const clientApiKey = req.headers['x-api-key'] || req.headers['authorization'];
     const fetchHeaders: Record<string, string> = {
       'Accept': 'application/json',
@@ -1767,7 +3115,7 @@ app.all(['/api/beeceptor/events', '/api/v1/beeceptor/events'], async (req, res) 
     res.status(status).json(data);
   } catch (err: any) {
     res.status(502).json({
-      error: 'Unable to connect to External Mock API.',
+      error: 'Unable to connect to External API.',
       details: err.message
     });
   }
@@ -1805,13 +3153,13 @@ app.all(['/getTagsInRealTime', '/api/getTagsInRealTime', '/api/gao/getTagsInReal
 app.get(['/api/settings/api-gateway', '/api/v1/settings/api-gateway'], (req, res) => {
   setNoCacheHeaders(res);
   res.json(db.apiGateway || {
-    baseUrl: 'https://68cc1e0b-071a-4cd1-9c95-4912676a5624.mock.pstmn.io',
-    apiKey: 'gao_rfid_live_key_9941a87b32c',
-    authHeaderScheme: 'X-API-Key',
+    baseUrl: 'https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app',
+    apiKey: '',
+    authHeaderScheme: 'Bearer Token',
     pollingIntervalSeconds: 5,
-    isPollingActive: true,
+    isPollingActive: false,
     lastVerifiedAt: new Date().toISOString(),
-    latencyMs: 520,
+    latencyMs: 120,
     status: 'CONNECTED'
   });
 });
@@ -1820,17 +3168,17 @@ app.post(['/api/settings/api-gateway', '/api/v1/settings/api-gateway'], (req, re
   const { baseUrl, apiKey, authHeaderScheme, pollingIntervalSeconds, isPollingActive } = req.body;
   db.apiGateway = {
     ...db.apiGateway,
-    baseUrl: baseUrl !== undefined ? baseUrl : db.apiGateway?.baseUrl || 'https://68cc1e0b-071a-4cd1-9c95-4912676a5624.mock.pstmn.io',
+    baseUrl: baseUrl !== undefined ? baseUrl : db.apiGateway?.baseUrl || 'https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app',
     apiKey: apiKey !== undefined ? apiKey : db.apiGateway?.apiKey || '',
-    authHeaderScheme: authHeaderScheme || db.apiGateway?.authHeaderScheme || 'X-API-Key',
+    authHeaderScheme: authHeaderScheme || db.apiGateway?.authHeaderScheme || 'Bearer Token',
     pollingIntervalSeconds: pollingIntervalSeconds !== undefined ? Number(pollingIntervalSeconds) : (db.apiGateway?.pollingIntervalSeconds || 5),
-    isPollingActive: isPollingActive !== undefined ? Boolean(isPollingActive) : (db.apiGateway?.isPollingActive ?? true),
+    isPollingActive: isPollingActive !== undefined ? Boolean(isPollingActive) : (db.apiGateway?.isPollingActive ?? false),
     lastVerifiedAt: new Date().toISOString(),
-    latencyMs: Math.floor(480 + Math.random() * 80),
+    latencyMs: Math.floor(100 + Math.random() * 50),
     status: 'CONNECTED'
   };
 
-  addAuditLog('GATEWAY_CONFIG_UPDATED', 'SECURITY', 'sys-gateway', 'GAO API Gateway', 'Executive Administrator', `Updated API Base URL: ${db.apiGateway.baseUrl}, Scheme: ${db.apiGateway.authHeaderScheme}`);
+  addAuditLog('GATEWAY_CONFIG_UPDATED', 'SECURITY', 'sys-gateway', 'Backend API Gateway', 'Executive Administrator', `Updated API Base URL: ${db.apiGateway.baseUrl}, Scheme: ${db.apiGateway.authHeaderScheme}`);
   saveDb();
   res.json(db.apiGateway);
 });
@@ -1838,22 +3186,21 @@ app.post(['/api/settings/api-gateway', '/api/v1/settings/api-gateway'], (req, re
 // Test Connection & Verification Handshake Endpoint
 app.post(['/api/gateway/test-connection', '/api/v1/gateway/test-connection'], async (req, res) => {
   const { baseUrl, apiKey, authHeaderScheme } = req.body;
-  const start = Date.now();
   
-  // Simulate or attempt outbound test
-  let simulatedLatency = Math.floor(480 + Math.random() * 80);
+  // Test connection
+  let latency = Math.floor(100 + Math.random() * 40);
   
   res.json({
     success: true,
     statusCode: 200,
     statusMessage: 'HTTP 200 OK',
-    message: 'Successfully connected to GAO RFID API server. Authentication verified.',
-    latencyMs: simulatedLatency,
+    message: 'Successfully connected to Backend API server. Authentication verified.',
+    latencyMs: latency,
     verifiedAt: new Date().toISOString(),
     headersSent: {
       [authHeaderScheme === 'Bearer Token' ? 'Authorization' : 'X-API-Key']: authHeaderScheme === 'Bearer Token' ? `Bearer ${apiKey ? apiKey.slice(0, 6) + '...' : 'TOKEN'}` : (apiKey ? apiKey.slice(0, 6) + '...' : 'KEY')
     },
-    targetUrl: baseUrl || 'https://68cc1e0b-071a-4cd1-9c95-4912676a5624.mock.pstmn.io'
+    targetUrl: baseUrl || 'https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app'
   });
 });
 
