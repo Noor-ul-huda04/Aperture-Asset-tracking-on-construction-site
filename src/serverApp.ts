@@ -38,10 +38,15 @@ const PORT = Number(process.env.PORT) || 3000;
 // connection may still be in progress (or not yet attempted), so getDb() returned null
 // and the route silently fell back to empty/default in-memory data instead of Mongo.
 async function ensureDb() {
-  let mongoDb = getDb();
-  if (mongoDb && isMongoConnected()) return mongoDb;
-  const result = await connectToMongoDB();
-  return result.db;
+  try {
+    let mongoDb = getDb();
+    if (mongoDb && isMongoConnected()) return mongoDb;
+    const result = await connectToMongoDB();
+    return result.db;
+  } catch (err) {
+    console.warn('[ensureDb] Connection error, safely falling back to in-memory store:', err);
+    return null;
+  }
 }
 
 interface DbState {

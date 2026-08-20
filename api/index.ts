@@ -4,13 +4,24 @@ import { app, initMongoDB } from '../src/serverApp';
 let initialized = false;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (!initialized) {
-    try {
-      await initMongoDB();
-    } catch (err) {
-      console.error('[Vercel Serverless] Error initializing MongoDB:', err);
+  try {
+    if (!initialized) {
+      try {
+        await initMongoDB();
+      } catch (err) {
+        console.warn('[Vercel Serverless] Non-fatal MongoDB initialization warning:', err);
+      }
+      initialized = true;
     }
-    initialized = true;
+    return app(req, res);
+  } catch (err: any) {
+    console.error('[Vercel Serverless Handler Error]', err);
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: 'SERVERLESS_FUNCTION_ERROR',
+        message: err?.message || String(err),
+        timestamp: new Date().toISOString()
+      });
+    }
   }
-  return app(req, res);
 }
