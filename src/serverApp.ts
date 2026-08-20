@@ -8,7 +8,9 @@ import {
   isMongoConnected,
   getMongoError,
   getLastSyncedAt,
-  setLastSyncedAt
+  setLastSyncedAt,
+  cleanMongoDoc,
+  cleanMongoDocs
 } from './data/mongodb';
 import { Asset, Checkout, Alert, ReadEvent, MaintenanceLog, Reader, Site, InventoryItem, User, AuditLog, ApiEndpointLogEntry } from './types';
 import { aperturePostmanCollection } from './data/postmanCollection';
@@ -1229,162 +1231,394 @@ app.delete(['/api/assets/:id', '/api/v1/assets/:id', '/assets/:id'], async (req,
 // Checkouts
 app.get(['/api/checkouts', '/api/v1/checkouts'], async (req, res) => {
   setNoCacheHeaders(res);
-  const mongoDb = await ensureDb();
-  if (mongoDb && isMongoConnected()) {
-    try {
-      const docs = await mongoDb.collection('checkouts').find({}).toArray();
-      if (docs.length > 0) {
-        db.checkouts = docs.map((doc: any) => {
-          const { _id, ...rest } = doc;
-          return { id: doc.id || (_id ? String(_id) : undefined), ...rest } as Checkout;
-        });
+  try {
+    console.log('[API /api/checkouts] GET checkouts list requested');
+    const mongoDb = await ensureDb();
+    let checkoutsList: Checkout[] = [];
+
+    if (mongoDb && isMongoConnected()) {
+      try {
+        const docs = await mongoDb.collection('checkouts').find({}).toArray();
+        checkoutsList = docs.map((doc: any) => cleanMongoDoc<Checkout>(doc));
+        if (checkoutsList.length > 0) {
+          db.checkouts = checkoutsList;
+        }
+      } catch (mongoErr: any) {
+        console.error('[API /api/checkouts] MongoDB query error:', mongoErr?.message || mongoErr);
+        checkoutsList = db.checkouts || [];
       }
-    } catch (e) {
-      console.warn('[GET /api/checkouts] Mongo query error:', e);
+    } else {
+      checkoutsList = db.checkouts || [];
     }
+
+    return res.status(200).json(checkoutsList);
+  } catch (err: any) {
+    console.error('[API /api/checkouts] GET handler crash:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to process checkout request',
+      details: err?.message || String(err)
+    });
   }
-  res.json(db.checkouts);
 });
 
 app.post(['/api/checkouts', '/api/v1/checkouts'], async (req, res) => {
-  const { assetId, userId, jobId, expectedReturnHours, notes, photoUrl } = req.body;
-  const asset = db.assets.find(a => a.id === assetId);
-  const user = db.users.find(u => u.id === userId);
-  if (!asset) return res.status(400).json({ error: 'Asset invalid' });
+  try {
+    console.log('[API /api/checkouts] POST checkout request received:', req.body);
+    const body = req.body || {};
+    const assetId = body.assetId || body.asset_id || body.id;
+    const userId = body.userId || body.user_id || 'usr-3';
+    const jobId = body.jobId || body.job_id || 'job-general';
+    const expectedReturnHours = Number(body.expectedReturnHours) || 8;
+    const notes = body.notes || 'Handheld scanner checkout';
+    const photoUrl = body.photoUrl;
 
-  const expectedHours = Number(expectedReturnHours) || 8;
-  const newCheckout: Checkout = {
-    id: `chk-${Date.now()}`,
-    assetId: asset.id,
-    assetName: asset.name,
-    assetCategory: asset.category,
-    tagEpc: asset.tagEpc,
-    userId: user?.id || 'usr-3',
-    userName: user?.name || 'Carlos Mendez',
-    badgeId: user?.badgeId || 'BDG-1029',
-    checkoutTime: new Date().toISOString(),
-    expectedReturn: new Date(Date.now() + 1000 * 60 * 60 * expectedHours).toISOString(),
-    jobId: jobId || 'job-general',
-    jobName: jobId ? `Job #${jobId}` : 'General Site Work',
-    checkoutCondition: asset.condition,
-    notes: notes || 'Handheld scanner checkout',
-    photoUrl,
-    status: 'ACTIVE'
-  };
-
-  asset.status = 'Checked Out';
-  asset.custodianId = newCheckout.userId;
-  asset.custodianName = newCheckout.userName;
-
-  const mongoDb = await ensureDb();
-  if (mongoDb && isMongoConnected()) {
-    try {
-      await mongoDb.collection('checkouts').insertOne({ ...newCheckout, _id: newCheckout.id as any });
-      await mongoDb.collection('assets').updateOne({ id: asset.id }, { $set: { status: 'Checked Out', custodianId: newCheckout.userId, custodianName: newCheckout.userName } });
-    } catch (err) {
-      console.warn('[MongoDB Checkout Error]', err);
+    if (!assetId) {
+      return res.status(400).json({
+        success: false,
+        error: 'MISSING_ASSET_ID',
+        message: 'assetId is required to issue a checkout record.'
+      });
     }
-  }
 
-  db.checkouts.unshift(newCheckout);
-  addAuditLog('CHECKOUT_ISSUED', 'CHECKOUT', newCheckout.id, asset.name, newCheckout.userName, `Checked out for job ${newCheckout.jobName}`);
-  saveDb();
-  res.status(201).json(newCheckout);
+    const mongoDb = await ensureDb();
+    let asset: Asset | null = null;
+    let user: User | null = null;
+
+    // Lookup asset in MongoDB or in-memory db
+    if (mongoDb && isMongoConnected()) {
+      try {
+        const assetDoc = await mongoDb.collection('assets').findOne({
+          $or: [{ id: assetId }, { _id: assetId as any }, { tagEpc: assetId }]
+        });
+        if (assetDoc) {
+          asset = cleanMongoDoc<Asset>(assetDoc);
+        }
+      } catch (err) {
+        console.warn('[API /api/checkouts] Mongo asset lookup failed:', err);
+      }
+    }
+
+    if (!asset) {
+      asset = db.assets.find(a => a.id === assetId || a.tagEpc === assetId) || null;
+    }
+
+    if (!asset) {
+      return res.status(400).json({
+        success: false,
+        error: 'ASSET_NOT_FOUND',
+        message: `Asset with ID or EPC '${assetId}' was not found.`
+      });
+    }
+
+    // Lookup user in MongoDB or in-memory db
+    if (mongoDb && isMongoConnected()) {
+      try {
+        const userDoc = await mongoDb.collection('users').findOne({
+          $or: [{ id: userId }, { _id: userId as any }, { badgeId: userId }]
+        });
+        if (userDoc) {
+          user = cleanMongoDoc<User>(userDoc);
+        }
+      } catch (err) {
+        console.warn('[API /api/checkouts] Mongo user lookup failed:', err);
+      }
+    }
+
+    if (!user) {
+      user = db.users.find(u => u.id === userId || u.badgeId === userId) || null;
+    }
+
+    const checkoutId = `chk-${Date.now()}`;
+    const userName = user?.name || body.userName || 'Carlos Mendez';
+    const userBadgeId = user?.badgeId || body.badgeId || 'BDG-1029';
+
+    const newCheckout: Checkout = {
+      id: checkoutId,
+      assetId: asset.id,
+      assetName: asset.name,
+      assetCategory: asset.category || 'Tools',
+      tagEpc: asset.tagEpc || '',
+      userId: user?.id || userId,
+      userName,
+      badgeId: userBadgeId,
+      checkoutTime: new Date().toISOString(),
+      expectedReturn: new Date(Date.now() + 1000 * 60 * 60 * expectedReturnHours).toISOString(),
+      jobId,
+      jobName: jobId ? `Job #${jobId}` : 'General Site Work',
+      checkoutCondition: asset.condition || 'Good',
+      notes,
+      photoUrl,
+      status: 'ACTIVE'
+    };
+
+    // Update asset custody
+    asset.status = 'Checked Out';
+    asset.custodianId = newCheckout.userId;
+    asset.custodianName = newCheckout.userName;
+
+    // Update in-memory db
+    const assetIdx = db.assets.findIndex(a => a.id === asset.id);
+    if (assetIdx !== -1) {
+      db.assets[assetIdx] = { ...db.assets[assetIdx], status: 'Checked Out', custodianId: newCheckout.userId, custodianName: newCheckout.userName };
+    }
+    db.checkouts.unshift(newCheckout);
+
+    // Save to MongoDB Atlas
+    if (mongoDb && isMongoConnected()) {
+      try {
+        await mongoDb.collection('checkouts').insertOne({ ...newCheckout, _id: newCheckout.id as any });
+        await mongoDb.collection('assets').updateOne(
+          { id: asset.id },
+          { $set: { status: 'Checked Out', custodianId: newCheckout.userId, custodianName: newCheckout.userName } }
+        );
+        console.log(`[API /api/checkouts] Saved checkout ${newCheckout.id} to MongoDB Atlas.`);
+      } catch (mongoWriteErr) {
+        console.error('[API /api/checkouts] MongoDB write error:', mongoWriteErr);
+      }
+    }
+
+    try {
+      addAuditLog('CHECKOUT_ISSUED', 'CHECKOUT', newCheckout.id, asset.name, newCheckout.userName, `Checked out for job ${newCheckout.jobName}`);
+      saveDb();
+    } catch (e) {
+      // non-fatal
+    }
+
+    return res.status(201).json(newCheckout);
+  } catch (err: any) {
+    console.error('[API /api/checkouts] POST handler crash:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to process checkout request',
+      details: err?.message || String(err)
+    });
+  }
 });
 
 app.post(['/api/checkouts/:id/return', '/api/v1/checkouts/:id/return'], async (req, res) => {
-  const checkout = db.checkouts.find(c => c.id === req.params.id);
-  if (!checkout) return res.status(404).json({ error: 'Checkout record not found' });
+  try {
+    const { id } = req.params;
+    const body = req.body || {};
+    const returnCondition = body.condition || 'Good';
+    console.log(`[API /api/checkouts/${id}/return] POST return requested:`, body);
 
-  checkout.status = 'RETURNED';
-  checkout.actualReturn = new Date().toISOString();
-  checkout.returnCondition = req.body.condition || 'Good';
+    const mongoDb = await ensureDb();
+    let checkout: Checkout | null = null;
 
-  const asset = db.assets.find(a => a.id === checkout.assetId);
-  if (asset) {
-    asset.status = 'In Zone';
-    asset.custodianId = undefined;
-    asset.custodianName = undefined;
-    if (req.body.condition) asset.condition = req.body.condition;
-  }
-
-  const mongoDb = await ensureDb();
-  if (mongoDb && isMongoConnected()) {
-    try {
-      await mongoDb.collection('checkouts').updateOne({ id: checkout.id }, { $set: { status: 'RETURNED', actualReturn: checkout.actualReturn, returnCondition: checkout.returnCondition } });
-      if (asset) {
-        await mongoDb.collection('assets').updateOne({ id: asset.id }, { $set: { status: 'In Zone', custodianId: null, custodianName: null, condition: asset.condition } });
+    if (mongoDb && isMongoConnected()) {
+      try {
+        const doc = await mongoDb.collection('checkouts').findOne({ $or: [{ id }, { _id: id as any }] });
+        if (doc) {
+          checkout = cleanMongoDoc<Checkout>(doc);
+        }
+      } catch (err) {
+        console.warn(`[API /api/checkouts/${id}/return] Mongo lookup error:`, err);
       }
-    } catch (err) {
-      console.warn('[MongoDB Return Checkout Error]', err);
     }
-  }
 
-  addAuditLog('CHECKOUT_RETURNED', 'CHECKOUT', checkout.id, checkout.assetName, checkout.userName, `Returned to zone in ${checkout.returnCondition} condition`);
-  saveDb();
-  res.json(checkout);
+    if (!checkout) {
+      checkout = db.checkouts.find(c => c.id === id) || null;
+    }
+
+    if (!checkout) {
+      return res.status(404).json({
+        success: false,
+        error: 'CHECKOUT_NOT_FOUND',
+        message: `Checkout record with ID '${id}' was not found.`
+      });
+    }
+
+    checkout.status = 'RETURNED';
+    checkout.actualReturn = new Date().toISOString();
+    checkout.returnCondition = returnCondition;
+
+    // Find and update asset in Mongo & in-memory
+    let asset: Asset | null = null;
+    if (mongoDb && isMongoConnected()) {
+      try {
+        const assetDoc = await mongoDb.collection('assets').findOne({ $or: [{ id: checkout.assetId }, { _id: checkout.assetId as any }] });
+        if (assetDoc) {
+          asset = cleanMongoDoc<Asset>(assetDoc);
+        }
+      } catch (e) {
+        console.warn(`[API /api/checkouts/${id}/return] Asset lookup error:`, e);
+      }
+    }
+
+    if (!asset) {
+      asset = db.assets.find(a => a.id === checkout?.assetId) || null;
+    }
+
+    if (asset) {
+      asset.status = 'In Zone';
+      asset.custodianId = undefined;
+      asset.custodianName = undefined;
+      asset.condition = returnCondition;
+
+      const aIdx = db.assets.findIndex(a => a.id === asset.id);
+      if (aIdx !== -1) {
+        db.assets[aIdx] = { ...db.assets[aIdx], status: 'In Zone', custodianId: undefined, custodianName: undefined, condition: returnCondition };
+      }
+    }
+
+    // Update in-memory checkout
+    const cIdx = db.checkouts.findIndex(c => c.id === id);
+    if (cIdx !== -1) {
+      db.checkouts[cIdx] = checkout;
+    }
+
+    // Update MongoDB Atlas
+    if (mongoDb && isMongoConnected()) {
+      try {
+        await mongoDb.collection('checkouts').updateOne(
+          { $or: [{ id }, { _id: id as any }] },
+          { $set: { status: 'RETURNED', actualReturn: checkout.actualReturn, returnCondition: checkout.returnCondition } }
+        );
+        if (checkout.assetId) {
+          await mongoDb.collection('assets').updateOne(
+            { $or: [{ id: checkout.assetId }, { _id: checkout.assetId as any }] },
+            { $set: { status: 'In Zone', custodianId: null, custodianName: null, condition: returnCondition } }
+          );
+        }
+      } catch (err) {
+        console.error(`[API /api/checkouts/${id}/return] MongoDB update error:`, err);
+      }
+    }
+
+    try {
+      addAuditLog('CHECKOUT_RETURNED', 'CHECKOUT', checkout.id, checkout.assetName, checkout.userName, `Returned to zone in ${checkout.returnCondition} condition`);
+      saveDb();
+    } catch (e) {}
+
+    return res.status(200).json(checkout);
+  } catch (err: any) {
+    console.error(`[API /api/checkouts/${req.params.id}/return] Crash:`, err);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to process return request',
+      details: err?.message || String(err)
+    });
+  }
 });
 
 app.get(['/api/checkouts/:id', '/api/v1/checkouts/:id'], async (req, res) => {
   setNoCacheHeaders(res);
-  const { id } = req.params;
-  const mongoDb = await ensureDb();
-  let checkout: Checkout | null = null;
-  if (mongoDb && isMongoConnected()) {
-    try {
-      const doc = await mongoDb.collection('checkouts').findOne({ $or: [{ id }, { _id: id as any }] });
-      if (doc) {
-        const { _id, ...rest } = doc;
-        checkout = { id: doc.id || String(_id), ...rest } as Checkout;
+  try {
+    const { id } = req.params;
+    const mongoDb = await ensureDb();
+    let checkout: Checkout | null = null;
+
+    if (mongoDb && isMongoConnected()) {
+      try {
+        const doc = await mongoDb.collection('checkouts').findOne({ $or: [{ id }, { _id: id as any }] });
+        if (doc) {
+          checkout = cleanMongoDoc<Checkout>(doc);
+        }
+      } catch (e) {
+        console.warn(`[GET /api/checkouts/${id}] Mongo error:`, e);
       }
-    } catch (e) {
-      console.warn(`[GET /api/checkouts/${id}] Mongo error:`, e);
     }
+
+    if (!checkout) {
+      checkout = db.checkouts.find(c => c.id === id) || null;
+    }
+
+    if (!checkout) {
+      return res.status(404).json({
+        success: false,
+        error: 'CHECKOUT_NOT_FOUND',
+        message: `Checkout record '${id}' not found`
+      });
+    }
+
+    return res.status(200).json(checkout);
+  } catch (err: any) {
+    console.error(`[GET /api/checkouts/${req.params.id}] Crash:`, err);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to retrieve checkout record',
+      details: err?.message || String(err)
+    });
   }
-  if (!checkout) checkout = db.checkouts.find(c => c.id === id) || null;
-  if (!checkout) return res.status(404).json({ error: 'CHECKOUT_NOT_FOUND', message: `Checkout record ${id} not found` });
-  res.json(checkout);
 });
 
 app.patch(['/api/checkouts/:id', '/api/v1/checkouts/:id'], async (req, res) => {
-  const { id } = req.params;
-  const updateData = req.body || {};
-  const mongoDb = await ensureDb();
-  let updatedCheckout: Checkout | null = null;
-  if (mongoDb && isMongoConnected()) {
-    try {
-      await mongoDb.collection('checkouts').updateOne({ id }, { $set: updateData });
-      const doc = await mongoDb.collection('checkouts').findOne({ id });
-      if (doc) {
-        const { _id, ...rest } = doc;
-        updatedCheckout = { id: doc.id || String(_id), ...rest } as Checkout;
+  try {
+    const { id } = req.params;
+    const updateData = req.body || {};
+    const mongoDb = await ensureDb();
+    let updatedCheckout: Checkout | null = null;
+
+    if (mongoDb && isMongoConnected()) {
+      try {
+        await mongoDb.collection('checkouts').updateOne(
+          { $or: [{ id }, { _id: id as any }] },
+          { $set: updateData }
+        );
+        const doc = await mongoDb.collection('checkouts').findOne({ $or: [{ id }, { _id: id as any }] });
+        if (doc) {
+          updatedCheckout = cleanMongoDoc<Checkout>(doc);
+        }
+      } catch (e) {
+        console.warn(`[PATCH /api/checkouts/${id}] Mongo error:`, e);
       }
-    } catch (e) {
-      console.warn(`[PATCH /api/checkouts/${id}] Mongo error:`, e);
     }
+
+    const idx = db.checkouts.findIndex(c => c.id === id);
+    if (idx !== -1) {
+      db.checkouts[idx] = { ...db.checkouts[idx], ...updateData };
+      if (!updatedCheckout) updatedCheckout = db.checkouts[idx];
+    }
+
+    if (!updatedCheckout) {
+      return res.status(404).json({
+        success: false,
+        error: 'CHECKOUT_NOT_FOUND',
+        message: `Checkout record '${id}' not found`
+      });
+    }
+
+    return res.status(200).json(updatedCheckout);
+  } catch (err: any) {
+    console.error(`[PATCH /api/checkouts/${req.params.id}] Crash:`, err);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to update checkout record',
+      details: err?.message || String(err)
+    });
   }
-  const idx = db.checkouts.findIndex(c => c.id === id);
-  if (idx !== -1) {
-    db.checkouts[idx] = { ...db.checkouts[idx], ...updateData };
-    if (!updatedCheckout) updatedCheckout = db.checkouts[idx];
-  }
-  if (!updatedCheckout) return res.status(404).json({ error: 'CHECKOUT_NOT_FOUND', message: `Checkout ${id} not found` });
-  res.json(updatedCheckout);
 });
 
 app.delete(['/api/checkouts/:id', '/api/v1/checkouts/:id'], async (req, res) => {
-  const { id } = req.params;
-  const mongoDb = await ensureDb();
-  if (mongoDb && isMongoConnected()) {
-    try {
-      await mongoDb.collection('checkouts').deleteOne({ $or: [{ id }, { _id: id as any }] });
-    } catch (e) {
-      console.warn(`[DELETE /api/checkouts/${id}] Mongo error:`, e);
+  try {
+    const { id } = req.params;
+    const mongoDb = await ensureDb();
+
+    if (mongoDb && isMongoConnected()) {
+      try {
+        await mongoDb.collection('checkouts').deleteOne({ $or: [{ id }, { _id: id as any }] });
+      } catch (e) {
+        console.warn(`[DELETE /api/checkouts/${id}] Mongo error:`, e);
+      }
     }
+
+    const idx = db.checkouts.findIndex(c => c.id === id);
+    if (idx !== -1) db.checkouts.splice(idx, 1);
+
+    return res.status(200).json({
+      success: true,
+      id,
+      message: 'Checkout record deleted successfully'
+    });
+  } catch (err: any) {
+    console.error(`[DELETE /api/checkouts/${req.params.id}] Crash:`, err);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to delete checkout record',
+      details: err?.message || String(err)
+    });
   }
-  const idx = db.checkouts.findIndex(c => c.id === id);
-  if (idx !== -1) db.checkouts.splice(idx, 1);
-  res.json({ success: true, id, message: 'Checkout record deleted successfully' });
 });
 
 // Events
