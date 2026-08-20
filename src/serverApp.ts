@@ -551,7 +551,8 @@ app.use((err: any, req: any, res: any, next: any) => {
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Firebase-AppCheck, x-firebase-appcheck');
+  res.setHeader('Access-Control-Allow-Headers', req.headers['access-control-request-headers'] || 'Content-Type, Authorization, X-API-Key, x-api-key, X-Firebase-AppCheck, x-firebase-appcheck, X-Requested-With, Cache-Control, Pragma, Accept');
+  res.setHeader('Access-Control-Expose-Headers', '*');
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
@@ -3396,7 +3397,7 @@ app.get(['/api/assets/:id/playback', '/api/v1/assets/:id/playback'], (req, res) 
 });
 
 // Postman Collection Endpoint (Serves the full v2.1.0 mock collection)
-app.get(['/api/postman/collection', '/api/v1/postman/collection', '/api/postman-collection.json'], (req, res) => {
+app.get(['/postman_collection.json', '/postman-collection.json', '/api/postman/collection', '/api/v1/postman/collection', '/api/postman-collection.json'], (req, res) => {
   setNoCacheHeaders(res);
   res.json(aperturePostmanCollection);
 });
