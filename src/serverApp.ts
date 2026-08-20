@@ -3159,8 +3159,9 @@ app.all(['/getTagsInRealTime', '/api/getTagsInRealTime', '/api/gao/getTagsInReal
 // API Gateway Settings Endpoint (GET & POST)
 app.get(['/api/settings/api-gateway', '/api/v1/settings/api-gateway'], (req, res) => {
   setNoCacheHeaders(res);
+  const hostUrl = `${req.protocol}://${req.get('host')}`;
   res.json(db.apiGateway || {
-    baseUrl: 'https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app',
+    baseUrl: hostUrl,
     apiKey: '',
     authHeaderScheme: 'Bearer Token',
     pollingIntervalSeconds: 5,
@@ -3173,9 +3174,10 @@ app.get(['/api/settings/api-gateway', '/api/v1/settings/api-gateway'], (req, res
 
 app.post(['/api/settings/api-gateway', '/api/v1/settings/api-gateway'], (req, res) => {
   const { baseUrl, apiKey, authHeaderScheme, pollingIntervalSeconds, isPollingActive } = req.body;
+  const hostUrl = `${req.protocol}://${req.get('host')}`;
   db.apiGateway = {
     ...db.apiGateway,
-    baseUrl: baseUrl !== undefined ? baseUrl : db.apiGateway?.baseUrl || 'https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app',
+    baseUrl: baseUrl !== undefined ? baseUrl : db.apiGateway?.baseUrl || hostUrl,
     apiKey: apiKey !== undefined ? apiKey : db.apiGateway?.apiKey || '',
     authHeaderScheme: authHeaderScheme || db.apiGateway?.authHeaderScheme || 'Bearer Token',
     pollingIntervalSeconds: pollingIntervalSeconds !== undefined ? Number(pollingIntervalSeconds) : (db.apiGateway?.pollingIntervalSeconds || 5),

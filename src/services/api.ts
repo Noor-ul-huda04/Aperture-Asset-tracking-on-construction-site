@@ -7,7 +7,15 @@ import { Asset, Checkout, Alert, ReadEvent, MaintenanceLog, Reader, Site, Invent
 
 const getApiBaseUrl = (): string => {
   const envUrl = import.meta.env?.VITE_API_BASE_URL;
-  if (envUrl && typeof envUrl === 'string' && envUrl.trim() && !envUrl.includes('pstmn') && !envUrl.includes('mock')) {
+  const isSandboxUrl = typeof envUrl === 'string' && (
+    envUrl.includes('ais-dev') ||
+    envUrl.includes('ais-pre') ||
+    envUrl.includes('pstmn') ||
+    envUrl.includes('mock') ||
+    envUrl.includes('.a.run.app')
+  );
+
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim() && !isSandboxUrl) {
     return envUrl.replace(/\/$/, '').replace(/\/api$/, '');
   }
   if (typeof window !== 'undefined' && window.location && window.location.origin) {

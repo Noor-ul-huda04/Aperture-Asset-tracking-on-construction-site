@@ -47,7 +47,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [testingMongo, setTestingMongo] = useState(false);
 
   // External API to MongoDB Ingestion & Sync state
-  const [externalApiUrl, setExternalApiUrl] = useState<string>('https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app');
+  const [externalApiUrl, setExternalApiUrl] = useState<string>(() => 
+    typeof window !== 'undefined' ? window.location.origin : ''
+  );
   const [externalApiKey, setExternalApiKey] = useState<string>('');
   const [apiSyncLoading, setApiSyncLoading] = useState<boolean>(false);
   const [wipeLoading, setWipeLoading] = useState<boolean>(false);
@@ -1000,10 +1002,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <div className="flex items-center gap-2 mt-1">
                     <button
                       type="button"
-                      onClick={() => setExternalApiUrl('https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app')}
+                      onClick={() => setExternalApiUrl(typeof window !== 'undefined' ? window.location.origin : '')}
                       className="text-[10px] text-blue-600 hover:underline font-mono"
                     >
-                      Use Backend API Server URL
+                      Use Current Domain API URL
                     </button>
                   </div>
                 </div>

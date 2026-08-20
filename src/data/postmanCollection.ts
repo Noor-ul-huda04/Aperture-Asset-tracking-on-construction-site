@@ -8,13 +8,13 @@ export const aperturePostmanCollection = {
   "variable": [
     {
       "key": "base_url",
-      "value": "https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app",
+      "value": "{{current_domain}}",
       "type": "string",
       "description": "Publicly accessible Live Base URL of the Aperture Asset Tracking API"
     },
     {
       "key": "url",
-      "value": "https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app",
+      "value": "{{current_domain}}",
       "type": "string",
       "description": "Base URL of the Aperture Asset Tracking API"
     }
