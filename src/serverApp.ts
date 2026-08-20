@@ -773,17 +773,48 @@ app.get(['/api', '/api/'], (req, res) => {
 });
 
 // Health Check
-app.get(['/api/health', '/api/v1/health'], (req, res) => {
-  const mongoDb = getDb();
-  const connected = isMongoConnected();
-  res.json({
-    status: 'ok',
-    service: 'Aperture RFID Asset Tracking Engine',
-    database: connected ? `MongoDB Atlas (${mongoDb?.databaseName})` : 'MongoDB (In-Memory/JSON Document Store)',
-    mongoConnected: connected,
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString()
-  });
+app.get(['/api/health', '/api/v1/health'], async (req, res) => {
+  try {
+    console.log('[API /api/health] Performing diagnostic checks...');
+    
+    // Attempt to connect to MongoDB if not connected
+    const mongoDb = await ensureDb();
+    let isDbHealthy = false;
+
+    if (mongoDb && isMongoConnected()) {
+      try {
+        // Ping database to verify it is reachable and active
+        await mongoDb.command({ ping: 1 });
+        isDbHealthy = true;
+      } catch (pingErr) {
+        console.error('[API /api/health] MongoDB ping failed:', pingErr);
+      }
+    }
+
+    if (isDbHealthy) {
+      return res.status(200).json({
+        success: true,
+        api: 'ok',
+        database: 'connected',
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      return res.status(503).json({
+        success: false,
+        api: 'ok',
+        database: 'disconnected',
+        timestamp: new Date().toISOString()
+      });
+    }
+  } catch (err: any) {
+    console.error('[API /api/health] Handler crash:', err);
+    return res.status(500).json({
+      success: false,
+      api: 'error',
+      database: 'disconnected',
+      details: err?.message || String(err)
+    });
+  }
 });
 
 // JSON Database View & Download Endpoint
