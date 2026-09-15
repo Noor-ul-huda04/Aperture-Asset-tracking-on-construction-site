@@ -155,7 +155,7 @@ export interface Alert {
   message: string;
 }
 
-export type UserRole = 'Admin' | 'Project Manager' | 'Site Manager' | 'Yard Staff' | 'Field Worker' | 'Maintenance Tech';
+export type UserRole = 'Admin' | 'Project Manager' | 'Site Manager' | 'Yard Staff' | 'Field Worker' | 'Maintenance Tech' | 'Equipment Foreman' | 'Safety & Compliance Inspector';
 
 export interface User {
   id: string;
@@ -243,5 +243,69 @@ export interface ApiEndpointLogEntry {
   userAgent?: string;
   responseSummary?: string;
   requestBody?: any;
+}
+
+// ====================================================
+// GAO RFID INC. OFFICIAL WEB APIS SPECIFICATION TYPES
+// Host: https://www.i360services.com/peopletrackinguhf
+// 1 Reader, 2 Antennas (Antenna 1 -> Zone 1, Antenna 2 -> Zone 2)
+// ====================================================
+
+/**
+ * 1. History Total Count: Total number of history records in GAO cloud database.
+ * Endpoint: GET /api/GetHistoryTotalCount
+ * Response: number (e.g. 100, 0 means no history data)
+ */
+export interface GaoHistoryTotalCountResponse {
+  count: number;
+  rawResponse?: string;
+}
+
+/**
+ * 2. Specific History Data: Record of entering and leaving a zone for a UHF tag.
+ * Endpoint: GET /api/GetHistoryRecords/{SkipCount}/{TakeCount}
+ * Ordered by generated time descending. TakeCount maximum value is 200.
+ * If returned count < TakeCount, end of history reached.
+ */
+export interface GaoHistoryRecord {
+  TagID: string; // UHF tag EPC (e.g. "E28011606000020788842D31")
+  FirstName?: string; // Personnel first name (e.g. "John")
+  LastName?: string; // Personnel last name (e.g. "Smith")
+  LocationName: string; // Location or zone name (e.g. "Zone1", "Zone2", "d6", "d8")
+  EnterTime?: string; // UTC time, "yyyy-MM-dd HH:mm:ss"
+  LeaveTime?: string; // UTC time, "yyyy-MM-dd HH:mm:ss"
+  EnterTimeStr?: string; // Alternate UTC time string
+  LeaveTimeStr?: string; // Alternate UTC time string
+  Duration: number; // Unit is hours (LeaveTime minus EnterTime, e.g. 0.5 = 30 minutes)
+}
+
+/**
+ * 3. Real-time Tag Data: Raw data reported by reader antennas.
+ * Endpoint: GET /api/GetTagsInRealtime
+ * 1 Reader, 2 Antennas each covering a zone (Zone1, Zone2).
+ * Ordered by generated time descending, extracted from tags queue.
+ */
+export interface GaoRealtimeTag {
+  TagID: string; // UHF tag EPC
+  Timestamp: string; // Reader found time, UTC "yyyy-MM-dd HH:mm:ss.fff"
+  Location: string; // Antenna zone name (e.g. "Zone1", "Zone2")
+}
+
+/**
+ * GAO RFID Hardware Topology
+ * 1 Reader with 2 Antennas covering 2 Zones
+ */
+export interface GaoReaderTopology {
+  readerId: string;
+  readerName: string;
+  model: string;
+  host: string;
+  status: 'ONLINE' | 'OFFLINE';
+  antennas: {
+    antennaId: number;
+    zoneName: string;
+    description: string;
+    activeTagsCount: number;
+  }[];
 }
 

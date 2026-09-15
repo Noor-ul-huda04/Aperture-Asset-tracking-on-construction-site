@@ -394,7 +394,7 @@ export const ApiLogsView: React.FC<ApiLogsViewProps> = () => {
                 </div>
                 <pre className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 text-amber-300 text-[11px] overflow-x-auto">
 {JSON.stringify({
-  "host": "ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app",
+  "host": "www.i360services.com",
   "user-agent": selectedLog.userAgent || "GAO-RFID-UHF-Client/4.2",
   "accept": "application/json",
   "x-api-key": "[REDACTED - API KEY SECURE]",

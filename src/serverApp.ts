@@ -749,6 +749,247 @@ app.use(async (req, res, next) => {
 // REST API ROUTES (Supports both /api/* and /api/v1/*)
 // ----------------------------------------------------
 
+// ====================================================
+// GAO RFID UHF SERVER-TO-SERVER PROXY & DIAGNOSTICS
+// Target Host: https://www.i360services.com/peopletrackinguhf
+// ====================================================
+
+const GAO_UPSTREAM_BASE = (process.env.GAO_API_BASE_URL || 'https://www.i360services.com/peopletrackinguhf').replace(/\/$/, '');
+
+interface GaoServerInspection {
+  endpoint: string;
+  targetUrl: string;
+  statusCode: number;
+  statusText: string;
+  contentType: string;
+  responseHeaders: Record<string, string>;
+  durationMs: number;
+  isValidJson: boolean;
+  rawBody: string;
+  parsedBody: any;
+  error?: string | null;
+  timeout: boolean;
+}
+
+async function executeGaoUpstreamRequest(endpointPath: string): Promise<GaoServerInspection> {
+  const targetUrl = `${GAO_UPSTREAM_BASE}${endpointPath}`;
+  const startTime = Date.now();
+  console.log(`[GAO Backend Proxy] -> Dispatching server-to-server request: ${targetUrl}`);
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+    const upstreamRes = await fetch(targetUrl, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json, text/plain, */*',
+        'User-Agent': 'Aperture-RFID-Backend/1.0'
+      },
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    const durationMs = Date.now() - startTime;
+    const statusCode = upstreamRes.status;
+    const contentType = upstreamRes.headers.get('content-type') || '';
+    const rawBody = await upstreamRes.text();
+
+    const responseHeaders: Record<string, string> = {};
+    upstreamRes.headers.forEach((val, key) => {
+      responseHeaders[key] = val;
+    });
+
+    let isValidJson = false;
+    let parsedBody: any = null;
+    try {
+      parsedBody = JSON.parse(rawBody);
+      isValidJson = true;
+    } catch {
+      isValidJson = false;
+      parsedBody = null;
+    }
+
+    console.log(`[GAO Backend Proxy] <- Status: ${statusCode}, ContentType: "${contentType}", ValidJSON: ${isValidJson}, Time: ${durationMs}ms`);
+
+    return {
+      endpoint: endpointPath,
+      targetUrl,
+      statusCode,
+      statusText: upstreamRes.statusText || (upstreamRes.ok ? 'OK' : 'Error'),
+      contentType,
+      responseHeaders,
+      durationMs,
+      isValidJson,
+      rawBody,
+      parsedBody,
+      timeout: false
+    };
+  } catch (err: any) {
+    const durationMs = Date.now() - startTime;
+    const isTimeout = err?.name === 'AbortError' || err?.message?.includes('timeout') || err?.message?.includes('aborted');
+    console.error(`[GAO Backend Proxy] !- Failed connecting to ${targetUrl} after ${durationMs}ms:`, err?.message || err);
+
+    return {
+      endpoint: endpointPath,
+      targetUrl,
+      statusCode: isTimeout ? 504 : 502,
+      statusText: isTimeout ? 'Gateway Timeout' : 'Bad Gateway',
+      contentType: 'application/json',
+      responseHeaders: {},
+      durationMs,
+      isValidJson: false,
+      rawBody: '',
+      parsedBody: null,
+      error: isTimeout ? 'Connection timed out after 15 seconds' : (err?.message || 'Server-to-server connection error'),
+      timeout: isTimeout
+    };
+  }
+}
+
+// 1. Total History Count Proxy
+app.get(['/api/GetHistoryTotalCount', '/api/v1/GetHistoryTotalCount'], async (req, res) => {
+  const result = await executeGaoUpstreamRequest('/api/GetHistoryTotalCount');
+
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('X-GAO-Status', String(result.statusCode));
+  res.setHeader('X-GAO-Content-Type', result.contentType);
+  res.setHeader('X-GAO-Is-Valid-Json', String(result.isValidJson));
+  res.setHeader('X-GAO-Duration-Ms', String(result.durationMs));
+  if (result.responseHeaders['server']) {
+    res.setHeader('X-GAO-Upstream-Server', result.responseHeaders['server']);
+  }
+
+  if (req.query.debug === 'true') {
+    return res.status(result.statusCode).json(result);
+  }
+
+  if (result.error) {
+    return res.status(result.statusCode).json({ error: result.error, targetUrl: result.targetUrl, durationMs: result.durationMs });
+  }
+
+  res.status(result.statusCode);
+  res.setHeader('Content-Type', result.contentType || (result.isValidJson ? 'application/json' : 'text/plain'));
+  return res.send(result.rawBody);
+});
+
+// 2. History Records Proxy
+// Spec: SkipCount skips records from beginning. TakeCount maximum value is 200.
+app.get(['/api/GetHistoryRecords/:skipCount/:takeCount', '/api/v1/GetHistoryRecords/:skipCount/:takeCount', '/api/GetHistoryRecords'], async (req, res) => {
+  const rawSkip = parseInt(String(req.params.skipCount || req.query.skip || '0'), 10);
+  const rawTake = parseInt(String(req.params.takeCount || req.query.take || '30'), 10);
+  const skipCount = isNaN(rawSkip) ? 0 : Math.max(0, rawSkip);
+  // TakeCount max value is 200 per GAO RFID specification
+  const takeCount = isNaN(rawTake) ? 30 : Math.min(Math.max(1, rawTake), 200);
+  const endpoint = `/api/GetHistoryRecords/${skipCount}/${takeCount}`;
+
+  const result = await executeGaoUpstreamRequest(endpoint);
+
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('X-GAO-Status', String(result.statusCode));
+  res.setHeader('X-GAO-Content-Type', result.contentType);
+  res.setHeader('X-GAO-Is-Valid-Json', String(result.isValidJson));
+  res.setHeader('X-GAO-Duration-Ms', String(result.durationMs));
+  if (result.responseHeaders['server']) {
+    res.setHeader('X-GAO-Upstream-Server', result.responseHeaders['server']);
+  }
+
+  if (req.query.debug === 'true') {
+    return res.status(result.statusCode).json(result);
+  }
+
+  if (result.error) {
+    return res.status(result.statusCode).json({ error: result.error, targetUrl: result.targetUrl, durationMs: result.durationMs });
+  }
+
+  res.status(result.statusCode);
+  res.setHeader('Content-Type', result.contentType || (result.isValidJson ? 'application/json' : 'text/plain'));
+  return res.send(result.rawBody);
+});
+
+// 3. Real-Time Tags Proxy
+app.get(['/api/GetTagsInRealtime', '/api/v1/GetTagsInRealtime'], async (req, res) => {
+  const result = await executeGaoUpstreamRequest('/api/GetTagsInRealtime');
+
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('X-GAO-Status', String(result.statusCode));
+  res.setHeader('X-GAO-Content-Type', result.contentType);
+  res.setHeader('X-GAO-Is-Valid-Json', String(result.isValidJson));
+  res.setHeader('X-GAO-Duration-Ms', String(result.durationMs));
+  if (result.responseHeaders['server']) {
+    res.setHeader('X-GAO-Upstream-Server', result.responseHeaders['server']);
+  }
+
+  if (req.query.debug === 'true') {
+    return res.status(result.statusCode).json(result);
+  }
+
+  if (result.error) {
+    return res.status(result.statusCode).json({ error: result.error, targetUrl: result.targetUrl, durationMs: result.durationMs });
+  }
+
+  res.status(result.statusCode);
+  res.setHeader('Content-Type', result.contentType || (result.isValidJson ? 'application/json' : 'text/plain'));
+  return res.send(result.rawBody);
+});
+
+// 4. Live GAO Diagnostics Suite
+app.get(['/api/gao/diagnostics', '/api/v1/gao/diagnostics'], async (req, res) => {
+  const [countResult, historyResult, realtimeResult] = await Promise.allSettled([
+    executeGaoUpstreamRequest('/api/GetHistoryTotalCount'),
+    executeGaoUpstreamRequest('/api/GetHistoryRecords/0/30'),
+    executeGaoUpstreamRequest('/api/GetTagsInRealtime')
+  ]);
+
+  const count = countResult.status === 'fulfilled' ? countResult.value : null;
+  const history = historyResult.status === 'fulfilled' ? historyResult.value : null;
+  const realtime = realtimeResult.status === 'fulfilled' ? realtimeResult.value : null;
+
+  const allHealthy = (count?.statusCode === 200) && (history?.statusCode === 200) && (realtime?.statusCode === 200);
+
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  return res.json({
+    status: allHealthy ? 'HEALTHY' : 'DEGRADED',
+    timestamp: new Date().toISOString(),
+    upstreamServer: GAO_UPSTREAM_BASE,
+    allowedByGaoServer: allHealthy,
+    summary: {
+      totalCountApi: {
+        statusCode: count?.statusCode,
+        statusText: count?.statusText,
+        contentType: count?.contentType,
+        headers: count?.responseHeaders,
+        rawBody: count?.rawBody,
+        isValidJson: count?.isValidJson,
+        parsedValue: count?.parsedBody,
+        durationMs: count?.durationMs,
+        error: count?.error || null
+      },
+      historyRecordsApi: {
+        statusCode: history?.statusCode,
+        statusText: history?.statusText,
+        contentType: history?.contentType,
+        headers: history?.responseHeaders,
+        recordCount: Array.isArray(history?.parsedBody) ? history?.parsedBody.length : 0,
+        isValidJson: history?.isValidJson,
+        durationMs: history?.durationMs,
+        error: history?.error || null,
+        sampleRecord: Array.isArray(history?.parsedBody) && history?.parsedBody[0] ? history?.parsedBody[0] : null
+      },
+      realtimeTagsApi: {
+        statusCode: realtime?.statusCode,
+        statusText: realtime?.statusText,
+        contentType: realtime?.contentType,
+        headers: realtime?.responseHeaders,
+        tagCount: Array.isArray(realtime?.parsedBody) ? realtime?.parsedBody.length : 0,
+        isValidJson: realtime?.isValidJson,
+        durationMs: realtime?.durationMs,
+        error: realtime?.error || null
+      }
+    }
+  });
+});
+
 // Root API Status & Service Descriptor
 app.get(['/api', '/api/'], (req, res) => {
   const mongoDb = getDb();
@@ -945,6 +1186,8 @@ app.all(['/api/mongodb/test', '/api/v1/mongodb/test'], async (req, res) => {
     });
   }
 });
+
+
 
 // Assets - GET (Supports MongoDB Atlas direct query)
 app.get(['/api/assets', '/api/v1/assets', '/assets'], async (req, res) => {

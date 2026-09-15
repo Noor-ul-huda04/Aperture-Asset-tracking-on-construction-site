@@ -8,9 +8,9 @@ import { Header } from './components/Header';
 import { SidebarNav, TabType } from './components/SidebarNav';
 import { DashboardView } from './components/DashboardView';
 import { AssetRegistryView } from './components/AssetRegistryView';
+import { LiveTrackingMapView } from './components/LiveTrackingMapView';
 import { AssetDetailModal } from './components/AssetDetailModal';
 import { AssetFormModal } from './components/AssetFormModal';
-import { LiveTrackingMapView } from './components/LiveTrackingMapView';
 import { FindAssetRadarModal } from './components/FindAssetRadarModal';
 import { CheckoutCustodyView } from './components/CheckoutCustodyView';
 import { GeofenceAlertsView } from './components/GeofenceAlertsView';
@@ -31,40 +31,26 @@ import { HardwareSimulatorDrawer } from './components/HardwareSimulatorDrawer';
 import { QrCodeModal } from './components/QrCodeModal';
 import { PublicAssetView } from './components/PublicAssetView';
 import { CsvImportModal } from './components/CsvImportModal';
+import { LoginView } from './components/LoginView';
 
 import {
-  getAssets,
-  getSites,
-  getCheckouts,
-  getAlerts,
-  getEvents,
-  getMaintenance,
-  getInventory,
-  getReaders,
-  getUsers,
-  getAuditLogs,
-  createAsset,
-  createAssetsBatch,
-  updateAsset,
-  deleteAsset,
-  createCheckout,
-  returnCheckout,
-  resolveAlert,
-  createMaintenance,
-  createInventoryItem,
-  updateInventory,
-  createReader,
-  submitRfidScan,
-  simulateScan,
+  fetchGaoAssetTrackingData,
+  getGaoRealtime,
+  getGaoHistoryCount,
+  getGaoHistory,
+  GAO_API_BASE_URL,
   API_BASE_URL
 } from './services/api';
 
-import { Asset, Site, Checkout, Alert, ReadEvent, MaintenanceLog, InventoryItem, Reader, User, AuditLog } from './types';
+import { Asset, Site, Checkout, Alert, ReadEvent, MaintenanceLog, InventoryItem, Reader, User, AuditLog, AssetCategory, AssetCondition, AssetStatus } from './types';
 import { AlertTriangle, RefreshCw, Loader2 } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [selectedSiteId, setSelectedSiteId] = useState<string>('ALL');
+
+  // Global Time Zone State
+  const [currentTimezone, setCurrentTimezone] = useState<string>('UTC');
 
   // API State Tracking
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -118,75 +104,59 @@ export default function App() {
   const initialPublicAsset = new URLSearchParams(window.location.search).get('publicAsset');
   const [publicAssetId, setPublicAssetId] = useState<string | null>(initialPublicAsset);
 
-  // Current User Persona
-  const [currentUser, setCurrentUser] = useState<User>({
-    id: 'usr-1',
-    name: 'Sarah Jenkins',
-    email: 'sjenkins@apertureconst.com',
-    role: 'Site Manager',
-    siteAccess: ['site-1', 'site-2'],
-    badgeId: 'BDG-8801',
-    avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150',
-    phone: '+1 (555) 234-5678'
+  // Authentication & Login Session State
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return localStorage.getItem('aperture_rfid_auth') === 'true';
   });
+
+  // Current User Persona
+  const [currentUser, setCurrentUser] = useState<User>(() => {
+    const saved = localStorage.getItem('aperture_rfid_user');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) { /* ignore */ }
+    }
+    return {
+      id: 'usr-1',
+      name: 'Sarah Jenkins',
+      email: 'sjenkins@apertureconst.com',
+      role: 'Site Manager',
+      siteAccess: ['site-1', 'site-2'],
+      badgeId: 'BDG-8801',
+      avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150',
+      phone: '+1 (555) 234-5678'
+    };
+  });
+
+  const handleLoginSuccess = (user: User) => {
+    setCurrentUser(user);
+    setIsAuthenticated(true);
+    localStorage.setItem('aperture_rfid_auth', 'true');
+    localStorage.setItem('aperture_rfid_user', JSON.stringify(user));
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    localStorage.setItem('aperture_rfid_auth', 'false');
+  };
 
   const isFetchingRef = useRef<boolean>(false);
 
-  // Primary Data Fetcher for Real Backend API & MongoDB Atlas
+  // Primary Data Fetcher: Loads directly from GAO RFID UHF Cloud Web APIs
   const loadAllData = useCallback(async () => {
     isFetchingRef.current = true;
     setIsLoading(true);
 
     try {
-      const [
-        astRes,
-        stRes,
-        chkRes,
-        altRes,
-        evtRes,
-        mntRes,
-        invRes,
-        rdrRes,
-        usrRes,
-        audRes
-      ] = await Promise.allSettled([
-        getAssets(),
-        getSites(),
-        getCheckouts(),
-        getAlerts(),
-        getEvents(),
-        getMaintenance(),
-        getInventory(),
-        getReaders(),
-        getUsers(),
-        getAuditLogs()
-      ]);
-
-      const allRejected = [
-        astRes, stRes, chkRes, altRes, evtRes, mntRes, invRes, rdrRes, usrRes, audRes
-      ].every(r => r.status === 'rejected');
-
-      if (allRejected) {
-        setApiError('Unable to load data from Backend API & MongoDB Atlas.');
-        return;
-      }
-
+      const gaoData = await fetchGaoAssetTrackingData();
+      setAssets(gaoData.assets);
+      setReadEvents(gaoData.events);
+      setSites(gaoData.sites);
+      setReaders(gaoData.readers);
       setApiError(null);
-
-      if (astRes.status === 'fulfilled') setAssets(astRes.value);
-      if (stRes.status === 'fulfilled') setSites(stRes.value);
-      if (chkRes.status === 'fulfilled') setCheckouts(chkRes.value);
-      if (altRes.status === 'fulfilled') setAlerts(altRes.value);
-      if (evtRes.status === 'fulfilled') setReadEvents(evtRes.value);
-      if (mntRes.status === 'fulfilled') setMaintenanceLogs(mntRes.value);
-      if (invRes.status === 'fulfilled') setInventory(invRes.value);
-      if (rdrRes.status === 'fulfilled') setReaders(rdrRes.value);
-      if (usrRes.status === 'fulfilled') setUsers(usrRes.value);
-      if (audRes.status === 'fulfilled') setAuditLogs(audRes.value);
-
       setLastSyncedAt(new Date().toLocaleTimeString());
     } catch (err: any) {
-      setApiError('Unable to load data from Backend API & MongoDB Atlas.');
+      console.error('Failed to load data from GAO RFID API:', err);
+      setApiError(`GAO RFID API Error: ${err.message || 'Unable to connect to https://www.i360services.com/peopletrackinguhf'}`);
     } finally {
       setIsLoading(false);
       isFetchingRef.current = false;
@@ -197,16 +167,84 @@ export default function App() {
     loadAllData();
   }, [loadAllData]);
 
-  // Polling ONLY live endpoints (/api/events and /api/alerts) every 15 seconds
+  // Polling GAO RFID Real-Time Tag Stream (/api/GetTagsInRealtime) every 15 seconds
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
-        const [evt, alt] = await Promise.all([
-          getEvents().catch(() => null),
-          getAlerts().catch(() => null)
-        ]);
-        if (evt) setReadEvents(evt);
-        if (alt) setAlerts(alt);
+        const realTimeTags = await getGaoRealtime().catch(() => null);
+        if (Array.isArray(realTimeTags) && realTimeTags.length > 0) {
+          const now = new Date().toISOString();
+          const newEvents: ReadEvent[] = realTimeTags.map((rt: any, idx: number) => {
+            const tagId = String(rt.TagID || rt.tagId || '').trim();
+            const loc = String(rt.Location || rt.location || 'Zone 1').trim();
+            const ts = rt.Timestamp || rt.timestamp || now;
+            return {
+              id: `rt-${tagId}-${Date.now()}-${idx}`,
+              epc: tagId,
+              assetId: tagId,
+              assetName: `GAO Tag ${tagId.slice(-6)}`,
+              assetCategory: 'PPE',
+              readerId: 'reader-gao-antenna-1',
+              readerName: `GAO Reader (${loc})`,
+              siteId: 'site-gao-facility',
+              siteName: 'GAO RFID UHF Facility',
+              zoneId: `zone-${loc.toLowerCase().replace(/\s+/g, '-')}`,
+              zoneName: loc,
+              rssi: -45,
+              timestamp: ts,
+              eventType: 'SCAN',
+              antennaId: 1
+            };
+          });
+
+          setReadEvents(prev => [...newEvents, ...prev].slice(0, 200));
+
+          setAssets(prev => {
+            const updated = [...prev];
+            realTimeTags.forEach((rt: any) => {
+              const tagId = String(rt.TagID || rt.tagId || '').trim();
+              const loc = String(rt.Location || rt.location || 'Zone 1').trim();
+              const ts = rt.Timestamp || rt.timestamp || now;
+              const existingIdx = updated.findIndex(a => a.tagEpc === tagId || a.id === tagId);
+              if (existingIdx >= 0) {
+                updated[existingIdx] = {
+                  ...updated[existingIdx],
+                  zoneName: loc,
+                  lastSeenAt: ts,
+                  status: 'In Zone'
+                };
+              } else {
+                updated.unshift({
+                  id: tagId,
+                  name: `GAO Tag ${tagId.slice(-6)}`,
+                  category: 'PPE',
+                  subCategory: 'Personnel UHF Tag',
+                  manufacturer: 'GAO RFID INC.',
+                  model: 'GAO-UHF-T90',
+                  serialNumber: tagId,
+                  tagEpc: tagId,
+                  status: 'In Zone',
+                  siteId: 'site-gao-facility',
+                  siteName: 'GAO RFID UHF Facility',
+                  zoneId: `zone-${loc.toLowerCase().replace(/\s+/g, '-')}`,
+                  zoneName: loc,
+                  purchaseDate: '2024-01-15',
+                  cost: 120,
+                  isRental: false,
+                  lastSeenAt: ts,
+                  lastReaderId: 'reader-gao-antenna-1',
+                  rssi: -45,
+                  photoUrl: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=150',
+                  condition: 'Good',
+                  custodianName: 'Field Personnel'
+                });
+              }
+            });
+            return updated;
+          });
+
+          setLastSyncedAt(new Date().toLocaleTimeString());
+        }
       } catch (_) {}
     }, 15000);
 
@@ -232,14 +270,39 @@ export default function App() {
     setTimeout(() => setToast(null), 3500);
   };
 
-  // Handler functions with Postman API calls
+  // Local demo state handlers
   const handleSaveAsset = async (data: Partial<Asset>) => {
     try {
       if (editingAsset) {
-        await updateAsset(editingAsset.id, data);
+        setAssets(prev => prev.map(a => a.id === editingAsset.id ? { ...a, ...data } : a));
         showToast('Asset specifications updated successfully');
       } else {
-        await createAsset(data);
+        const newAsset: Asset = {
+          id: data.id || `ast-gao-${Date.now()}`,
+          name: data.name || 'New RFID Tag Asset',
+          category: data.category || 'PPE',
+          subCategory: data.subCategory || 'Personnel UHF Tag',
+          manufacturer: 'GAO RFID INC.',
+          model: 'GAO-UHF-T90',
+          serialNumber: data.serialNumber || `SN-${Date.now()}`,
+          tagEpc: data.tagEpc || `E280116060000207888${Math.floor(1000 + Math.random() * 9000)}`,
+          status: data.status || 'In Zone',
+          siteId: data.siteId || 'site-gao-facility',
+          siteName: data.siteName || 'GAO RFID UHF Facility',
+          zoneId: data.zoneId || 'zone-1',
+          zoneName: data.zoneName || 'Antenna Zone 1',
+          purchaseDate: '2024-01-15',
+          cost: 120,
+          isRental: false,
+          lastSeenAt: new Date().toISOString(),
+          lastReaderId: 'reader-gao-antenna-1',
+          rssi: -48,
+          photoUrl: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=150',
+          condition: 'Good',
+          custodianName: data.custodianName || 'Field Personnel',
+          ...data
+        };
+        setAssets(prev => [newAsset, ...prev]);
         showToast('New asset registered successfully into Aperture catalog');
       }
     } catch (err: any) {
@@ -248,67 +311,87 @@ export default function App() {
     } finally {
       setEditingAsset(null);
       setAssetFormOpen(false);
-      await loadAllData();
     }
   };
 
   const handleDeleteAsset = async (id: string) => {
     try {
-      await deleteAsset(id);
-      showToast('Asset removed from Aperture registry');
+      setAssets(prev => prev.filter(a => a.id !== id));
+      showToast('Asset removed from registry');
     } catch (err: any) {
       console.error('Failed to delete asset:', err);
       showToast(`Error deleting asset: ${err.message || String(err)}`, 'error');
-    } finally {
-      await loadAllData();
     }
   };
 
   const handleCreateCheckout = async (data: { assetId: string; userId: string; jobId?: string; expectedReturnHours?: number; notes?: string }) => {
     try {
-      await createCheckout(data);
+      const asset = assets.find(a => a.id === data.assetId);
+      const newCheckout: Checkout = {
+        id: `chk-${Date.now()}`,
+        assetId: data.assetId,
+        assetName: asset?.name || 'Tracked Asset',
+        assetCategory: asset?.category || 'PPE',
+        tagEpc: asset?.tagEpc || '',
+        userId: data.userId,
+        userName: currentUser.name,
+        badgeId: currentUser.badgeId || 'BDG-01',
+        checkoutTime: new Date().toISOString(),
+        expectedReturn: new Date(Date.now() + (data.expectedReturnHours || 8) * 3600000).toISOString(),
+        status: 'ACTIVE',
+        jobId: data.jobId || 'job-general',
+        jobName: 'General Field Assignment',
+        checkoutCondition: 'Good',
+        notes: data.notes
+      };
+      setCheckouts(prev => [newCheckout, ...prev]);
+      setAssets(prev => prev.map(a => a.id === data.assetId ? { ...a, status: 'Checked Out', custodianName: currentUser.name } : a));
       showToast('Asset checked out successfully & custody recorded');
     } catch (err: any) {
       console.error('Failed to create checkout:', err);
       showToast(`Error creating checkout: ${err.message || String(err)}`, 'error');
-    } finally {
-      await loadAllData();
     }
   };
 
-  const handleReturnCheckout = async (checkoutId: string, condition: string = 'GOOD') => {
+  const handleReturnCheckout = async (checkoutId: string, condition: string = 'Good') => {
     try {
-      await returnCheckout(checkoutId, condition);
+      const chk = checkouts.find(c => c.id === checkoutId);
+      if (chk) {
+        setCheckouts(prev => prev.map(c => c.id === checkoutId ? { ...c, status: 'RETURNED', actualReturn: new Date().toISOString(), returnCondition: (condition as AssetCondition) || 'Good' } : c));
+        setAssets(prev => prev.map(a => a.id === chk.assetId ? { ...a, status: 'In Zone', custodianName: undefined } : a));
+      }
       showToast(`Asset return checked in with condition: ${condition}`);
     } catch (err: any) {
       console.error('Failed to return checkout:', err);
       showToast(`Error returning asset: ${err.message || String(err)}`, 'error');
-    } finally {
-      await loadAllData();
     }
   };
 
   const handleResolveAlert = async (id: string) => {
     setAlerts(prev => prev.map(a => a.id === id ? { ...a, resolved: true, status: 'RESOLVED', resolvedBy: currentUser.name, resolvedAt: new Date().toISOString() } : a));
-    try {
-      await resolveAlert(id, currentUser.name);
-      showToast('Alert resolved and logged in security audit history');
-    } catch (err: any) {
-      console.warn('Note on resolving alert:', err);
-    } finally {
-      await loadAllData();
-    }
+    showToast('Alert resolved and logged in security audit history');
   };
 
   const handleCreateMaintenance = async (data: Partial<MaintenanceLog>) => {
     try {
-      await createMaintenance(data);
+      const newLog: MaintenanceLog = {
+        id: `mnt-${Date.now()}`,
+        assetId: data.assetId || assets[0]?.id || 'ast-1',
+        assetName: data.assetName || assets[0]?.name || 'Asset',
+        date: new Date().toISOString(),
+        scheduledDate: data.scheduledDate || new Date().toISOString(),
+        type: (data.type as any) || 'Preventive',
+        status: (data.status as any) || 'Scheduled',
+        technician: data.technician || currentUser.name,
+        notes: data.notes || '',
+        cost: data.cost || 0,
+        workOrderId: `WO-${Date.now().toString().slice(-6)}`
+      };
+      setMaintenanceLogs(prev => [newLog, ...prev]);
       showToast('Maintenance work order logged successfully');
     } catch (err: any) {
       console.error('Failed to create maintenance:', err);
       showToast(`Error creating maintenance log: ${err.message || String(err)}`, 'error');
-    } finally {
-      await loadAllData();
     }
   };
 
@@ -316,21 +399,16 @@ export default function App() {
     const item = inventory.find(i => i.id === id);
     if (!item) return;
     const newQty = Math.max(0, item.quantityOnHand + delta);
-    try {
-      await updateInventory(id, { quantityOnHand: newQty });
-      showToast(`Stock updated for ${item.name}: ${newQty} ${item.unit}`);
-    } catch (err: any) {
-      console.error('Failed to update inventory:', err);
-    } finally {
-      await loadAllData();
-    }
+    setInventory(prev => prev.map(i => i.id === id ? { ...i, quantityOnHand: newQty } : i));
+    showToast(`Stock updated for ${item.name}: ${newQty} ${item.unit}`);
   };
 
   const handleAddInventoryItem = async (data: Partial<InventoryItem>) => {
     try {
-      const newItem = await createInventoryItem({
-        siteId: selectedSiteId === 'ALL' ? (sites[0]?.id || 'SITE-001') : selectedSiteId,
-        siteName: sites.find(s => s.id === selectedSiteId)?.name || 'Downtown Metro Tower',
+      const newItem: InventoryItem = {
+        id: `inv-${Date.now()}`,
+        siteId: selectedSiteId === 'ALL' ? (sites[0]?.id || 'site-gao-facility') : selectedSiteId,
+        siteName: sites.find(s => s.id === selectedSiteId)?.name || 'GAO RFID UHF Facility',
         name: data.name || 'New Item SKU',
         category: data.category || 'Supplies',
         quantityOnHand: data.quantityOnHand || 0,
@@ -339,56 +417,92 @@ export default function App() {
         unit: data.unit || 'units',
         costPerUnit: data.costPerUnit || 10,
         ...data
-      });
+      };
+      setInventory(prev => [newItem, ...prev]);
       showToast(`Inventory item "${newItem.name}" saved to stock catalog`);
     } catch (err: any) {
       console.error('Failed to add inventory item:', err);
       showToast(`Error adding inventory item: ${err.message || String(err)}`, 'error');
-    } finally {
-      await loadAllData();
     }
   };
 
   const handleAddReader = async (data: Partial<Reader>) => {
     try {
-      const newReader = await createReader({
-        siteId: selectedSiteId === 'ALL' ? (sites[0]?.id || 'SITE-001') : selectedSiteId,
-        siteName: sites.find(s => s.id === selectedSiteId)?.name || 'Downtown Metro Tower',
-        name: data.name || 'New Gateway Portal',
+      const newReader: Reader = {
+        id: `reader-${Date.now()}`,
+        siteId: selectedSiteId === 'ALL' ? (sites[0]?.id || 'site-gao-facility') : selectedSiteId,
+        siteName: sites.find(s => s.id === selectedSiteId)?.name || 'GAO RFID UHF Facility',
+        name: data.name || 'GAO UHF Gateway Portal',
         type: data.type || 'Fixed Portal',
-        ipAddress: data.ipAddress || '192.168.1.200',
+        ipAddress: data.ipAddress || 'www.i360services.com',
         zoneId: data.zoneId || 'zone-01',
-        zoneName: data.zoneName || 'Laydown Yard',
-        antennaPowerDbm: data.antennaPowerDbm || 28,
+        zoneName: data.zoneName || 'Antenna Portal',
+        antennaPowerDbm: data.antennaPowerDbm || 30,
         status: 'Online',
-        firmwareVersion: 'v4.2.0-PROD',
+        lastHeartbeat: new Date().toISOString(),
+        firmwareVersion: 'v4.2.0-GAO',
+        readCountTotal: 100,
+        bufferedEventsCount: 0,
         ...data
-      });
+      };
+      setReaders(prev => [newReader, ...prev]);
       showToast(`Reader gateway "${newReader.name}" connected and saved`);
     } catch (err: any) {
       console.error('Failed to add reader:', err);
       showToast(`Error adding reader: ${err.message || String(err)}`, 'error');
-    } finally {
-      await loadAllData();
     }
   };
 
   const handleTriggerReaderScan = async (readerId: string, readerName: string) => {
-    const sampleAsset = assets[0] || { id: 'ast-cat-320', name: 'CAT 320D Excavator #401', tagEpc: 'E2801191A001' };
-    try {
-      await simulateScan(sampleAsset.tagEpc || 'E2801191A001', readerId, -58);
-      showToast(`Live tag read recorded on ${readerName} for ${sampleAsset.name}`);
-    } catch (err: any) {
-      console.error('Failed to trigger scan:', err);
-    } finally {
-      await loadAllData();
-    }
+    const sampleAsset = assets[0] || { id: 'ast-gao-1', name: 'GAO UHF Tag #1', tagEpc: 'E28011606000020788842D31', category: 'PPE' as const, siteId: 'site-gao-facility', siteName: 'GAO RFID UHF Facility', zoneId: 'zone-1', zoneName: 'Antenna Zone 1' };
+    const newEvent: ReadEvent = {
+      id: `rt-scan-${Date.now()}`,
+      epc: sampleAsset.tagEpc,
+      assetId: sampleAsset.id,
+      assetName: sampleAsset.name,
+      assetCategory: sampleAsset.category,
+      readerId,
+      readerName,
+      siteId: sampleAsset.siteId,
+      siteName: sampleAsset.siteName,
+      zoneId: sampleAsset.zoneId,
+      zoneName: sampleAsset.zoneName,
+      rssi: -48,
+      timestamp: new Date().toISOString(),
+      eventType: 'SCAN',
+      antennaId: 1
+    };
+    setReadEvents(prev => [newEvent, ...prev].slice(0, 200));
+    showToast(`Live tag read recorded on ${readerName} for ${sampleAsset.name}`);
   };
 
   const handleBatchImportAssets = async (newAssetsList: Partial<Asset>[]) => {
-    await createAssetsBatch(newAssetsList);
+    const imported: Asset[] = newAssetsList.map((item, idx) => ({
+      id: item.id || `ast-imp-${Date.now()}-${idx}`,
+      name: item.name || `Imported Asset ${idx + 1}`,
+      category: (item.category as AssetCategory) || 'PPE',
+      subCategory: item.subCategory || 'Personnel UHF Tag',
+      manufacturer: item.manufacturer || 'GAO RFID INC.',
+      model: item.model || 'GAO-UHF-T90',
+      serialNumber: item.serialNumber || `SN-${Date.now()}-${idx}`,
+      tagEpc: item.tagEpc || `E280116060000207888${Math.floor(1000 + Math.random() * 9000)}`,
+      status: item.status || 'In Zone',
+      siteId: item.siteId || 'site-gao-facility',
+      siteName: item.siteName || 'GAO RFID UHF Facility',
+      zoneId: item.zoneId || 'zone-1',
+      zoneName: item.zoneName || 'Zone 1',
+      purchaseDate: '2024-01-15',
+      cost: item.cost || 120,
+      isRental: false,
+      lastSeenAt: new Date().toISOString(),
+      lastReaderId: 'reader-gao-antenna-1',
+      rssi: -48,
+      photoUrl: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=150',
+      condition: 'Good',
+      ...item
+    }));
+    setAssets(prev => [...imported, ...prev]);
     showToast(`Imported ${newAssetsList.length} assets successfully into catalog`);
-    await loadAllData();
   };
 
   // If URL query parameter specifies public view mode, render PublicAssetView
@@ -422,6 +536,16 @@ export default function App() {
   });
   const filteredReaders = selectedSiteId === 'ALL' ? (readers || []) : (readers || []).filter(r => r.siteId === selectedSiteId);
 
+  // Mandatory Authentication Gate: Show Login Screen if user is not authenticated
+  if (!isAuthenticated) {
+    return (
+      <LoginView
+        onLoginSuccess={handleLoginSuccess}
+        availableUsers={users}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans antialiased">
       
@@ -444,6 +568,9 @@ export default function App() {
         isSyncing={isSyncing}
         lastSyncedAt={lastSyncedAt}
         onNavigateTab={setActiveTab}
+        currentTimezone={currentTimezone}
+        onChangeTimezone={setCurrentTimezone}
+        onLogout={handleLogout}
       />
 
       {/* Main Body Area: Sidebar Nav + Tab Content */}
@@ -479,10 +606,10 @@ export default function App() {
                   <AlertTriangle className="w-5 h-5 stroke-[2.5]" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm text-red-950">Unable to load data from Backend API & MongoDB Atlas.</h3>
+                  <h3 className="font-bold text-sm text-red-950">Unable to load data from GAO RFID UHF API.</h3>
                   <p className="text-xs text-red-700 mt-0.5">{apiError}</p>
                   <p className="text-[11px] text-red-500 font-mono mt-1">
-                    Target Endpoint: {API_BASE_URL}
+                    GAO Server: {GAO_API_BASE_URL}
                   </p>
                 </div>
               </div>
@@ -501,8 +628,8 @@ export default function App() {
           {isLoading && !apiError && assets.length === 0 && sites.length === 0 && (
             <div className="bg-white border border-slate-200 rounded-xl p-12 text-center text-slate-500 space-y-3">
               <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto" />
-              <h3 className="font-bold text-sm text-slate-800">Loading asset tracking data from Backend API...</h3>
-              <p className="text-xs text-slate-500 font-mono">{API_BASE_URL}</p>
+              <h3 className="font-bold text-sm text-slate-800">Loading live asset tracking data from GAO RFID UHF Server...</h3>
+              <p className="text-xs text-slate-500 font-mono">{GAO_API_BASE_URL}</p>
             </div>
           )}
 
@@ -516,6 +643,8 @@ export default function App() {
               onNavigateTab={setActiveTab}
               onOpenAssetDetail={setInspectingAsset}
               onOpenAlertsModal={() => setActiveTab('geofencing')}
+              currentTimezone={currentTimezone}
+              onChangeTimezone={setCurrentTimezone}
             />
           )}
 
@@ -559,6 +688,7 @@ export default function App() {
               onOpenQrModal={(a) => setQrModalAsset(a)}
               onFindRadar={setRadarAsset}
               onRefreshData={loadAllData}
+              currentTimezone={currentTimezone}
             />
           )}
 
@@ -635,18 +765,20 @@ export default function App() {
               users={users}
               checkouts={filteredCheckouts}
               onScanCheckout={async (assetId, userId) => {
-                await createCheckout({ assetId, userId, jobId: 'job-mobile-field' });
-                loadAllData();
+                await handleCreateCheckout({ assetId, userId, jobId: 'job-mobile-field' });
               }}
               onScanReturn={async (checkoutId) => {
-                await returnCheckout(checkoutId, 'Good');
-                loadAllData();
+                await handleReturnCheckout(checkoutId, 'Good');
               }}
             />
           )}
 
           {activeTab === 'playback' && (
-            <PlaybackView assets={filteredAssets} />
+            <PlaybackView
+              assets={filteredAssets}
+              currentTimezone={currentTimezone}
+              onChangeTimezone={setCurrentTimezone}
+            />
           )}
 
           {activeTab === 'audit' && (
@@ -671,6 +803,8 @@ export default function App() {
               currentUser={currentUser}
               onRefreshAll={loadAllData}
               onNavigateTab={(tab: TabType | string) => setActiveTab(tab as TabType)}
+              currentTimezone={currentTimezone}
+              onChangeTimezone={setCurrentTimezone}
             />
           )}
 

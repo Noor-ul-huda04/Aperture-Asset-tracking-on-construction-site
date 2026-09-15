@@ -39,6 +39,7 @@ import {
   ReferenceLine
 } from 'recharts';
 import { Asset, Alert, ReadEvent, Site, Checkout } from '../types';
+import { formatInTimezone } from '../utils/timezone';
 
 interface DashboardViewProps {
   assets: Asset[];
@@ -49,6 +50,8 @@ interface DashboardViewProps {
   onNavigateTab: (tab: any) => void;
   onOpenAssetDetail: (asset: Asset) => void;
   onOpenAlertsModal: () => void;
+  currentTimezone?: string;
+  onChangeTimezone?: (tz: string) => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -59,7 +62,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   checkouts,
   onNavigateTab,
   onOpenAssetDetail,
-  onOpenAlertsModal
+  onOpenAlertsModal,
+  currentTimezone = 'UTC',
+  onChangeTimezone
 }) => {
   const totalValue = (assets || []).reduce((sum, a) => sum + (a.cost || 125000), 0);
   const checkedOutCount = (assets || []).filter(a => a.status === 'Checked Out' || a.status === 'CHECKED_OUT' || a.status === 'IN_USE').length;
@@ -156,7 +161,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   return (
     <div className="space-y-6">
-      
       {/* Top Banner Critical Notice if alerts exist */}
       {criticalAlerts.length > 0 && (
         <div className="bg-red-950/80 border border-red-600/60 rounded-xl p-4 flex items-center justify-between gap-4 text-red-200 shadow-lg shadow-red-950/50">

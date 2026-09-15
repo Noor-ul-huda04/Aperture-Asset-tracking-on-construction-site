@@ -16,7 +16,9 @@ import {
   LogOut,
   RefreshCw,
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  Clock,
+  Globe
 } from 'lucide-react';
 import { Site, User, Alert } from '../types';
 import { useFirebaseAuth } from '../context/FirebaseAuthContext';
@@ -39,6 +41,9 @@ interface HeaderProps {
   isSyncing?: boolean;
   lastSyncedAt?: string | null;
   onNavigateTab?: (tab: any) => void;
+  currentTimezone?: string;
+  onChangeTimezone?: (tz: string) => void;
+  onLogout?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -58,7 +63,10 @@ export const Header: React.FC<HeaderProps> = ({
   onManualSync,
   isSyncing = false,
   lastSyncedAt,
-  onNavigateTab
+  onNavigateTab,
+  currentTimezone = 'UTC',
+  onChangeTimezone,
+  onLogout
 }) => {
   const [userDropdownOpen, setUserDropdownOpen] = React.useState(false);
   const unresolvedAlerts = (alerts || []).filter(a => !a.resolved && (a as any).status !== 'RESOLVED');
@@ -100,6 +108,31 @@ export const Header: React.FC<HeaderProps> = ({
                   {s.name} ({s.code})
                 </option>
               ))}
+            </select>
+          </div>
+
+          {/* Time Zone Selector Dropdown in Navbar */}
+          <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800/80 rounded-xl px-2.5 py-1.5 shrink-0 shadow-2xs">
+            <Globe className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span className="hidden xl:inline text-[11px] font-mono font-medium text-slate-400">TZ:</span>
+            <select
+              value={currentTimezone || 'UTC'}
+              onChange={(e) => onChangeTimezone && onChangeTimezone(e.target.value)}
+              className="bg-transparent text-xs font-mono font-bold text-amber-300 focus:outline-none cursor-pointer pr-1"
+              title="Global Display Timezone"
+            >
+              <option value="UTC" className="bg-slate-950 text-white">UTC</option>
+              <option value="LOCAL" className="bg-slate-950 text-white">Local</option>
+              <option value="EST" className="bg-slate-950 text-white">EST (UTC-4)</option>
+              <option value="CST" className="bg-slate-950 text-white">CST (UTC-5)</option>
+              <option value="MST" className="bg-slate-950 text-white">MST (UTC-6)</option>
+              <option value="PST" className="bg-slate-950 text-white">PST (UTC-7)</option>
+              <option value="GMT" className="bg-slate-950 text-white">GMT (UTC+0)</option>
+              <option value="CET" className="bg-slate-950 text-white">CET (UTC+1)</option>
+              <option value="PKT" className="bg-slate-950 text-white">PKT (UTC+5)</option>
+              <option value="IST" className="bg-slate-950 text-white">IST (UTC+5:30)</option>
+              <option value="JST" className="bg-slate-950 text-white">JST (UTC+9)</option>
+              <option value="AEST" className="bg-slate-950 text-white">AEST (UTC+10)</option>
             </select>
           </div>
         </div>
@@ -222,6 +255,24 @@ export const Header: React.FC<HeaderProps> = ({
                   {u.id === currentUser.id && <UserCheck className="w-3.5 h-3.5 text-blue-400 shrink-0" />}
                 </button>
               ))}
+
+              {onLogout && (
+                <div className="p-1 border-t border-slate-800 mt-1">
+                  <button
+                    onClick={() => {
+                      setUserDropdownOpen(false);
+                      onLogout();
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs text-red-400 hover:bg-red-950/60 hover:text-red-300 rounded-lg flex items-center justify-between font-bold transition-colors cursor-pointer"
+                  >
+                    <span className="flex items-center gap-2">
+                      <LogOut className="w-3.5 h-3.5" />
+                      Sign Out
+                    </span>
+                    <span className="text-[10px] font-mono opacity-60">Session</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 

@@ -22,19 +22,24 @@ import {
 } from 'lucide-react';
 import { Site, User } from '../types';
 import { TabType } from './SidebarNav';
+import { getSelectedTimezone, formatInTimezone, TIMEZONES } from '../utils/timezone';
 
 interface SettingsViewProps {
   sites: Site[];
   currentUser: User;
   onRefreshAll: () => void;
   onNavigateTab?: (tab: TabType | string) => void;
+  currentTimezone?: string;
+  onChangeTimezone?: (tz: string) => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
   sites,
   currentUser,
   onRefreshAll,
-  onNavigateTab
+  onNavigateTab,
+  currentTimezone = 'UTC',
+  onChangeTimezone
 }) => {
   // Page tab state inside settings: 4 clean, non-overlapping configuration tabs
   type SettingsTab = 'general' | 'notifications' | 'rfid_params' | 'database';
@@ -339,49 +344,139 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         {/* PAGE 1: Organization & Default Site */}
         {activeSettingsTab === 'general' && (
-          <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4 shadow-xs animate-fade-in">
-            <h3 className="font-bold text-sm text-slate-900 uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 pb-3">
-              <Building2 className="w-4 h-4 text-blue-600" />
-              <span>General Organization & Site Defaults</span>
-            </h3>
+          <div className="space-y-6 animate-fade-in">
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4 shadow-xs">
+              <h3 className="font-bold text-sm text-slate-900 uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 pb-3">
+                <Building2 className="w-4 h-4 text-blue-600" />
+                <span>General Organization & Site Defaults</span>
+              </h3>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 text-xs">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Company / Organization Name</label>
-                <input 
-                  type="text" 
-                  value={orgName}
-                  onChange={(e) => setOrgName(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-xs">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Company / Organization Name</label>
+                  <input 
+                    type="text" 
+                    value={orgName}
+                    onChange={(e) => setOrgName(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Primary Job Site Default</label>
+                  <select
+                    value={defaultSiteId}
+                    onChange={(e) => setDefaultSiteId(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  >
+                    {sites.map(s => (
+                      <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Time Zone Settings & System Display Clock */}
+            <div className="bg-slate-950 border border-slate-800 text-slate-100 rounded-2xl p-6 space-y-5 shadow-lg">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-amber-500/20 border border-amber-500/40 rounded-xl text-amber-400">
+                    <Clock className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                      <span>System Display Time Zone Settings</span>
+                      <span className="px-2 py-0.5 bg-amber-500/10 text-amber-300 border border-amber-500/30 rounded text-[10px] font-mono font-bold">
+                        {currentTimezone}
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Controls how RFID portal timestamps, history logs, and movement breadcrumbs are formatted across all views.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Live Clock Preview */}
+                <div className="bg-slate-900 border border-slate-800 rounded-xl px-4 py-2 text-right">
+                  <div className="text-[10px] font-mono text-slate-400 uppercase tracking-widest font-bold">
+                    Active Time ({currentTimezone})
+                  </div>
+                  <div className="text-sm font-mono font-bold text-amber-300">
+                    {formatInTimezone(new Date(), currentTimezone)}
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Primary Job Site Default</label>
-                <select
-                  value={defaultSiteId}
-                  onChange={(e) => setDefaultSiteId(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                >
-                  {sites.map(s => (
-                    <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-xs">
+                {/* Active Timezone Dropdown */}
+                <div className="space-y-2">
+                  <label className="block font-mono font-bold text-slate-300 uppercase text-[11px]">
+                    Select Active Display Time Zone
+                  </label>
+                  <select
+                    value={currentTimezone}
+                    onChange={(e) => {
+                      if (onChangeTimezone) onChangeTimezone(e.target.value);
+                      setTimeZone(e.target.value);
+                    }}
+                    className="w-full bg-slate-900 border border-slate-700 text-amber-300 font-mono font-bold rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-amber-500 transition-colors"
+                  >
+                    <option value="UTC">UTC — Coordinated Universal Time (GAO Server Native)</option>
+                    <option value="LOCAL">LOCAL — Local Browser Auto-Detect</option>
+                    <option value="EST">EST — Eastern Standard Time (UTC-4 / UTC-5)</option>
+                    <option value="CST">CST — Central Standard Time (UTC-5 / UTC-6)</option>
+                    <option value="MST">MST — Mountain Standard Time (UTC-6 / UTC-7)</option>
+                    <option value="PST">PST — Pacific Standard Time (UTC-7 / UTC-8)</option>
+                    <option value="GMT">GMT — Greenwich Mean Time / BST (UTC+0 / UTC+1)</option>
+                    <option value="CET">CET — Central European Time (UTC+1 / UTC+2)</option>
+                    <option value="PKT">PKT — Pakistan Standard Time (UTC+5)</option>
+                    <option value="IST">IST — India Standard Time (UTC+5:30)</option>
+                    <option value="JST">JST — Japan Standard Time (UTC+9)</option>
+                    <option value="AEST">AEST — Australian Eastern Standard Time (UTC+10)</option>
+                  </select>
+                </div>
+
+                {/* Timezone Info */}
+                <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-3.5 space-y-1.5 font-mono text-[11px]">
+                  <div className="text-slate-400 font-bold flex items-center justify-between">
+                    <span>GAO Server Format:</span>
+                    <span className="text-emerald-400">UTC ISO-8601</span>
+                  </div>
+                  <div className="text-slate-400 font-bold flex items-center justify-between">
+                    <span>Active Display Zone:</span>
+                    <span className="text-amber-300">{getSelectedTimezone(currentTimezone).name} ({getSelectedTimezone(currentTimezone).badge})</span>
+                  </div>
+                  <p className="text-slate-500 text-[10px] pt-1 border-t border-slate-800">
+                    Changing the display time zone immediately shifts all read event timestamps, checkout records, and history breadcrumbs without altering raw backend audit records.
+                  </p>
+                </div>
+              </div>
+
+              {/* Quick Timezone Presets */}
+              <div className="pt-2 border-t border-slate-800">
+                <span className="text-[10px] font-mono text-slate-400 uppercase font-bold block mb-2">
+                  Quick Time Zone Presets:
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  {TIMEZONES.map((tz) => (
+                    <button
+                      key={tz.code}
+                      type="button"
+                      onClick={() => {
+                        if (onChangeTimezone) onChangeTimezone(tz.code);
+                        setTimeZone(tz.code);
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all ${
+                        currentTimezone === tz.code
+                          ? 'bg-amber-500 text-slate-950 font-black shadow-xs'
+                          : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800'
+                      }`}
+                    >
+                      {tz.code} ({tz.badge})
+                    </button>
                   ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">System Time Zone</label>
-                <select
-                  value={timeZone}
-                  onChange={(e) => setTimeZone(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                >
-                  <option value="America/New_York (EST)">America/New_York (EST / UTC-5)</option>
-                  <option value="America/Chicago (CST)">America/Chicago (CST / UTC-6)</option>
-                  <option value="America/Denver (MST)">America/Denver (MST / UTC-7)</option>
-                  <option value="America/Los_Angeles (PST)">America/Los_Angeles (PST / UTC-8)</option>
-                  <option value="Europe/London (GMT)">Europe/London (GMT / UTC+0)</option>
-                </select>
+                </div>
               </div>
             </div>
           </div>
@@ -996,7 +1091,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     type="url"
                     value={externalApiUrl}
                     onChange={(e) => setExternalApiUrl(e.target.value)}
-                    placeholder="https://ais-dev-ot7rtvum7gckl5jiwdqz2d-817249406448.asia-east1.run.app"
+                    placeholder="https://www.i360services.com/peopletrackinguhf"
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-slate-900 font-mono text-xs focus:outline-none"
                   />
                   <div className="flex items-center gap-2 mt-1">
