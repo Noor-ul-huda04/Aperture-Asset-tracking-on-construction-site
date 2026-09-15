@@ -933,6 +933,114 @@ app.get(['/api/GetTagsInRealtime', '/api/v1/GetTagsInRealtime'], async (req, res
   return res.send(result.rawBody);
 });
 
+// Universal Hardware & Custom API Gateway Server-Side Proxy (Bypasses Browser CORS)
+app.all(['/api/gateway/proxy', '/api/v1/gateway/proxy'], async (req, res) => {
+  const targetUrl = (req.query.url as string || req.body?.url as string)?.trim();
+  if (!targetUrl) {
+    return res.status(400).json({
+      error: 'MISSING_TARGET_URL',
+      message: 'Please provide a target endpoint URL via "url" parameter.'
+    });
+  }
+
+  const startTime = Date.now();
+  try {
+    const method = (req.body?.method || req.query?.method || (req.method === 'GET' ? 'GET' : 'GET')).toUpperCase();
+    const authHeaderName = (req.headers['x-target-auth-header'] as string) || (req.body?.authHeaderName) || 'X-API-Key';
+    const authHeaderValue = (req.headers['x-target-api-key'] as string) || (req.body?.apiKey) || '';
+
+    const headers: Record<string, string> = {
+      'Accept': 'application/json, text/plain, */*',
+      'User-Agent': 'Aperture-RFID-Backend/1.0'
+    };
+
+    if (authHeaderValue && authHeaderValue.trim()) {
+      headers[authHeaderName] = authHeaderName.toLowerCase() === 'authorization' && !authHeaderValue.startsWith('Bearer ')
+        ? `Bearer ${authHeaderValue}`
+        : authHeaderValue;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+    const upstreamRes = await fetch(targetUrl, {
+      method: method === 'OPTIONS' ? 'GET' : method,
+      headers,
+      body: ['POST', 'PUT', 'PATCH'].includes(method) && req.body?.payload ? JSON.stringify(req.body.payload) : undefined,
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    const durationMs = Date.now() - startTime;
+    const contentType = upstreamRes.headers.get('content-type') || 'application/json';
+    const rawText = await upstreamRes.text();
+
+    let finalRes = upstreamRes;
+    let finalRawText = rawText;
+    let finalTargetUrl = targetUrl;
+
+    // Smart 404 Auto-resolution for GAO RFID paths
+    if (upstreamRes.status === 404 && targetUrl.includes('i360services.com/peopletrackinguhf')) {
+      let candidateUrl: string | null = null;
+      if (targetUrl.toLowerCase().includes('realtime') || targetUrl.toLowerCase().includes('tag')) {
+        candidateUrl = 'https://www.i360services.com/peopletrackinguhf/api/GetTagsInRealtime';
+      } else if (targetUrl.toLowerCase().includes('history') || targetUrl.toLowerCase().includes('date') || targetUrl.toLowerCase().includes('asset')) {
+        candidateUrl = 'https://www.i360services.com/peopletrackinguhf/api/GetHistoryRecords/0/30';
+      }
+
+      if (candidateUrl && candidateUrl !== targetUrl) {
+        try {
+          const retryRes = await fetch(candidateUrl, {
+            method: 'GET',
+            headers,
+            signal: controller.signal
+          });
+          if (retryRes.ok) {
+            finalRes = retryRes;
+            finalRawText = await retryRes.text();
+            finalTargetUrl = candidateUrl;
+          }
+        } catch {
+          // Keep original response if retry fails
+        }
+      }
+    }
+
+    let parsed: any = null;
+    let isValidJson = false;
+    try {
+      parsed = JSON.parse(finalRawText);
+      isValidJson = true;
+    } catch {
+      parsed = finalRawText;
+      isValidJson = false;
+    }
+
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    return res.status(finalRes.status).json({
+      ok: finalRes.ok,
+      status: finalRes.status,
+      statusText: finalRes.statusText || (finalRes.ok ? 'OK' : 'Status ' + finalRes.status),
+      durationMs,
+      contentType: finalRes.headers.get('content-type') || contentType,
+      isValidJson,
+      targetUrl: finalTargetUrl,
+      resolvedFrom404: finalTargetUrl !== targetUrl,
+      data: parsed
+    });
+  } catch (err: any) {
+    const durationMs = Date.now() - startTime;
+    return res.status(502).json({
+      ok: false,
+      status: 502,
+      statusText: 'Bad Gateway',
+      durationMs,
+      targetUrl,
+      error: err?.message || 'Server-to-server proxy connection failed'
+    });
+  }
+});
+
 // 4. Live GAO Diagnostics Suite
 app.get(['/api/gao/diagnostics', '/api/v1/gao/diagnostics'], async (req, res) => {
   const [countResult, historyResult, realtimeResult] = await Promise.allSettled([

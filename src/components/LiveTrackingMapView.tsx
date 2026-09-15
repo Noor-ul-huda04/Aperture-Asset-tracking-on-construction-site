@@ -134,6 +134,8 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
 
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [mapMode, setMapMode] = useState<'GOOGLE_MAP' | 'SCHEMATIC' | 'RADAR' | 'GRID'>('GOOGLE_MAP');
+  const [mapType, setMapType] = useState<'roadmap' | 'hybrid'>('roadmap');
+  const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [filterSearch, setFilterSearch] = useState<string>('');
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
@@ -143,10 +145,59 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
   const googleMapRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
   const markersRef = useRef<google.maps.Marker[]>([]);
+  const trailPolylineRef = useRef<google.maps.Polyline | null>(null);
+  const trailMarkersRef = useRef<google.maps.Marker[]>([]);
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
 
   const currentZones = currentSite?.zones || [];
   const activeZone = currentZones.find((z) => z.id === selectedZoneId) || currentZones[0];
+
+  // Helper to generate 5 historical breadcrumb locations for an asset
+  const getAssetBreadcrumbs = (asset: Asset, center: { lat: number; lng: number }, assetIndex: number) => {
+    const zonesList = currentZones.length > 0 ? currentZones : [
+      { name: 'Receiving Dock', code: 'ZONE-1' },
+      { name: 'Main Laydown Yard', code: 'ZONE-2' },
+      { name: 'Assembly Bay A', code: 'ZONE-3' },
+      { name: 'High-Bay Storage', code: 'ZONE-4' },
+      { name: 'Outbound Gate Portal', code: 'ZONE-5' }
+    ];
+
+    const now = new Date();
+    const trail: Array<{ step: number; zoneName: string; timestamp: string; lat: number; lng: number }> = [];
+
+    // Base current location offset
+    const latOffset = ((assetIndex % 5) - 2) * 0.0012 + (assetIndex * 0.0003);
+    const lngOffset = (Math.floor(assetIndex / 5) - 2) * 0.0015 + ((assetIndex % 3) * 0.0004);
+    const currLat = center.lat + latOffset;
+    const currLng = center.lng + lngOffset;
+
+    // Generate 5 historical steps going backwards in time
+    for (let i = 4; i >= 0; i--) {
+      const minsAgo = (i + 1) * 12 + (assetIndex * 3);
+      const stepTime = new Date(now.getTime() - minsAgo * 60 * 1000);
+      const zone = zonesList[(assetIndex + i) % zonesList.length];
+
+      // Simulated realistic path drift leading to current position
+      const stepLatShift = (i / 4) * -0.0025 + Math.sin(i + assetIndex) * 0.0005;
+      const stepLngShift = (i / 4) * -0.0030 + Math.cos(i + assetIndex) * 0.0005;
+
+      trail.push({
+        step: 5 - i,
+        zoneName: zone.name || `Zone ${5 - i}`,
+        timestamp: formatInTimezone(stepTime, currentTimezone, { includeSeconds: false }),
+        lat: currLat + stepLatShift,
+        lng: currLng + stepLngShift,
+      });
+    }
+
+    // Point 5 is current location
+    trail[4].lat = currLat;
+    trail[4].lng = currLng;
+    trail[4].zoneName = asset.zoneName || trail[4].zoneName;
+    trail[4].timestamp = formatInTimezone(asset.lastSeenAt ? new Date(asset.lastSeenAt) : now, currentTimezone, { includeSeconds: false });
+
+    return trail;
+  };
 
   const handleManualRefresh = async () => {
     setIsRefreshing(true);
@@ -156,7 +207,22 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
     setTimeout(() => setIsRefreshing(false), 800);
   };
 
+  const categoriesList = Array.from(
+    new Set([
+      'ALL',
+      'Equipment',
+      'Tools',
+      'Personnel',
+      'Heavy Machinery',
+      'Vehicles',
+      ...siteAssets.map((a) => a.category).filter((c): c is string => Boolean(c))
+    ])
+  );
+
   const filteredAssets = siteAssets.filter((ast) => {
+    if (selectedCategory !== 'ALL' && ast.category !== selectedCategory) {
+      return false;
+    }
     if (!filterSearch) return true;
     const q = filterSearch.toLowerCase();
     return (
@@ -166,6 +232,13 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
       (ast.category && ast.category.toLowerCase().includes(q))
     );
   });
+
+  // Sync Google Map Type (Roadmap vs Hybrid/Satellite)
+  useEffect(() => {
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.setMapTypeId(mapType);
+    }
+  }, [mapType]);
 
   // Google Maps Loader & Marker Setup
   useEffect(() => {
@@ -195,7 +268,8 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
           const map = new Map(googleMapRef.current, {
             center: centerCoords,
             zoom: 15,
-            styles: DARK_MAP_STYLE,
+            mapTypeId: mapType,
+            styles: mapType === 'hybrid' ? [] : DARK_MAP_STYLE,
             disableDefaultUI: false,
             zoomControl: true,
             mapTypeControl: true,
@@ -206,6 +280,8 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
           infoWindowRef.current = new google.maps.InfoWindow();
         } else {
           mapInstanceRef.current.setCenter(centerCoords);
+          mapInstanceRef.current.setMapTypeId(mapType);
+          mapInstanceRef.current.setOptions({ styles: mapType === 'hybrid' ? [] : DARK_MAP_STYLE });
         }
 
         // Clear existing markers
@@ -274,6 +350,69 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
     };
   }, [mapMode, selectedSiteId, filteredAssets]);
 
+  // Effect to draw / clear Breadcrumb Polyline Trail when selectedAsset changes
+  useEffect(() => {
+    if (mapMode !== 'GOOGLE_MAP' || !mapInstanceRef.current) return;
+
+    // Clear previous polyline
+    if (trailPolylineRef.current) {
+      trailPolylineRef.current.setMap(null);
+      trailPolylineRef.current = null;
+    }
+    // Clear previous trail markers
+    trailMarkersRef.current.forEach((m) => m.setMap(null));
+    trailMarkersRef.current = [];
+
+    if (!selectedAsset) return;
+
+    const centerCoords = SITE_COORDINATES[selectedSiteId] || SITE_COORDINATES['site-1'];
+    const assetIdx = Math.max(0, filteredAssets.findIndex((a) => a.id === selectedAsset.id));
+    const breadcrumbs = getAssetBreadcrumbs(selectedAsset, centerCoords, assetIdx);
+
+    const pathCoords = breadcrumbs.map((b) => ({ lat: b.lat, lng: b.lng }));
+
+    // Create polyline connecting last 5 locations
+    const polyline = new google.maps.Polyline({
+      path: pathCoords,
+      geodesic: true,
+      strokeColor: '#38bdf8',
+      strokeOpacity: 0.95,
+      strokeWeight: 4,
+      map: mapInstanceRef.current,
+    });
+    trailPolylineRef.current = polyline;
+
+    // Create numbered step markers
+    breadcrumbs.forEach((pt) => {
+      const isCurrent = pt.step === 5;
+      const marker = new google.maps.Marker({
+        position: { lat: pt.lat, lng: pt.lng },
+        map: mapInstanceRef.current!,
+        title: `Point ${pt.step}: ${pt.zoneName} (${pt.timestamp})`,
+        label: {
+          text: `${pt.step}`,
+          color: '#ffffff',
+          fontSize: '10px',
+          fontWeight: 'bold',
+        },
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: isCurrent ? 13 : 9,
+          fillColor: isCurrent ? '#10b981' : '#0284c7',
+          fillOpacity: 1,
+          strokeWeight: 2,
+          strokeColor: '#ffffff',
+        },
+      });
+      trailMarkersRef.current.push(marker);
+    });
+
+    // Fit map bounds to show full trail
+    const bounds = new google.maps.LatLngBounds();
+    pathCoords.forEach((pt) => bounds.extend(pt));
+    mapInstanceRef.current.fitBounds(bounds, 50);
+  }, [selectedAsset, mapMode, selectedSiteId, filteredAssets]);
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Top Header & Map Controls */}
@@ -314,6 +453,35 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
               ))}
             </select>
           </div>
+
+          {/* Roadmap vs Satellite Toggle Switch */}
+          {mapMode === 'GOOGLE_MAP' && (
+            <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-1 font-mono text-xs">
+              <button
+                onClick={() => setMapType('roadmap')}
+                className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                  mapType === 'roadmap'
+                    ? 'bg-slate-800 text-cyan-300 font-bold border border-slate-700 shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="Vector Roadmap View"
+              >
+                <span>Roadmap</span>
+              </button>
+              <button
+                onClick={() => setMapType('hybrid')}
+                className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                  mapType === 'hybrid'
+                    ? 'bg-emerald-600 text-white font-bold shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="Satellite Aerial Imagery View"
+              >
+                <Layers className="w-3.5 h-3.5 text-emerald-200" />
+                <span>Satellite</span>
+              </button>
+            </div>
+          )}
 
           {/* Map Mode Buttons */}
           <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-1 font-mono text-xs">
@@ -388,20 +556,39 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
               </span>
               <span className="text-slate-500">|</span>
               <span className="text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                {siteAssets.length} Assets Tracked
+                {filteredAssets.length} of {siteAssets.length} Pins Shown
               </span>
             </div>
 
-            {/* Quick Filter Search */}
-            <div className="relative w-full sm:w-64">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Filter tag EPC, serial, name..."
-                value={filterSearch}
-                onChange={(e) => setFilterSearch(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 font-mono"
-              />
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+              {/* Category Filter Dropdown */}
+              <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs font-mono text-slate-300">
+                <Filter className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                <span className="text-slate-500 text-[11px] hidden sm:inline">Category:</span>
+                <select
+                  value={selectedCategory}
+                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer"
+                >
+                  {categoriesList.map((cat) => (
+                    <option key={cat} value={cat} className="bg-slate-900 text-white">
+                      {cat === 'ALL' ? 'All Categories' : cat}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Quick Filter Search */}
+              <div className="relative w-full sm:w-56">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search tag EPC, serial, name..."
+                  value={filterSearch}
+                  onChange={(e) => setFilterSearch(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 font-mono"
+                />
+              </div>
             </div>
           </div>
 
@@ -625,6 +812,46 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
                   <div className="flex justify-between text-slate-400 border-t border-slate-900 pt-1.5">
                     <span>Cost Value:</span>
                     <span className="text-emerald-400 font-bold">${selectedAsset.cost}</span>
+                  </div>
+                </div>
+
+                {/* Breadcrumb Trail (Last 5 Locations) */}
+                <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-2">
+                  <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                    <span className="font-bold text-cyan-400 text-[11px] flex items-center gap-1.5">
+                      <Compass className="w-3.5 h-3.5 text-cyan-300" />
+                      <span>Breadcrumb Trail (Last 5 Locations)</span>
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono">Polyline Active</span>
+                  </div>
+
+                  <div className="space-y-1.5 pt-1">
+                    {getAssetBreadcrumbs(
+                      selectedAsset,
+                      SITE_COORDINATES[selectedSiteId] || SITE_COORDINATES['site-1'],
+                      Math.max(0, filteredAssets.findIndex((a) => a.id === selectedAsset.id))
+                    ).map((stepItem) => (
+                      <div
+                        key={stepItem.step}
+                        className={`flex items-center justify-between p-1.5 rounded-lg border text-[10.5px] font-mono transition-all ${
+                          stepItem.step === 5
+                            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                            : 'bg-slate-900 border-slate-800 text-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 truncate">
+                          <span
+                            className={`w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center shrink-0 ${
+                              stepItem.step === 5 ? 'bg-emerald-500 text-slate-950' : 'bg-cyan-600 text-white'
+                            }`}
+                          >
+                            {stepItem.step}
+                          </span>
+                          <span className="font-medium truncate">{stepItem.zoneName}</span>
+                        </div>
+                        <span className="text-[9.5px] text-slate-400 shrink-0">{stepItem.timestamp}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
 

@@ -18,11 +18,13 @@ import {
   Clock,
   Filter,
   Zap,
-  Radio
+  Radio,
+  Globe
 } from 'lucide-react';
 import { Site, User } from '../types';
 import { TabType } from './SidebarNav';
 import { getSelectedTimezone, formatInTimezone, TIMEZONES } from '../utils/timezone';
+import { HardwareApiGatewayConfig } from './HardwareApiGatewayConfig';
 
 interface SettingsViewProps {
   sites: Site[];
@@ -41,8 +43,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   currentTimezone = 'UTC',
   onChangeTimezone
 }) => {
-  // Page tab state inside settings: 4 clean, non-overlapping configuration tabs
-  type SettingsTab = 'general' | 'notifications' | 'rfid_params' | 'database';
+  // Page tab state inside settings: 5 clean, non-overlapping configuration tabs
+  type SettingsTab = 'general' | 'notifications' | 'rfid_params' | 'database' | 'api_connector';
   const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>('general');
 
   // MongoDB Atlas status state
@@ -279,6 +281,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       label: 'Database & Sync', 
       icon: <Database className="w-4 h-4" />,
       desc: 'Cloud Firestore synchronization status, REST API diagnostics, and cache controls'
+    },
+    {
+      id: 'api_connector',
+      label: 'API & Hardware Gateway',
+      icon: <Globe className="w-4 h-4" />,
+      desc: 'Plug and play custom REST APIs, API keys, JSON payload schema mapper, and RFID hardware reader gateway settings'
     }
   ];
 
@@ -1206,6 +1214,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
             </div>
           </div>
+        )}
+
+        {/* PAGE 5: Custom API & Hardware Integration Gateway */}
+        {activeSettingsTab === 'api_connector' && (
+          <HardwareApiGatewayConfig onRefreshAll={onRefreshAll} />
         )}
 
         {/* Form Submit Footer */}

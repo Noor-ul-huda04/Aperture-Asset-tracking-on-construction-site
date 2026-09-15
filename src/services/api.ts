@@ -13,23 +13,28 @@ import {
   GaoRealtimeTag,
   GaoHistoryTotalCountResponse
 } from '../types';
+import { getHardwareApiConfig } from './hardwareApiConfig';
 
 /**
  * Frontend API Service Layer
- * Primary API Source: GAO RFID UHF Web APIs (https://www.i360services.com/peopletrackinguhf)
+ * Primary API Source: GAO RFID UHF Web APIs or Custom Plugged User REST APIs
  */
 
 export const GAO_API_BASE_URL = 'https://www.i360services.com/peopletrackinguhf';
 
-const getApiBaseUrl = (): string => {
+export function getActiveApiBaseUrl(): string {
+  const cfg = getHardwareApiConfig();
+  if (cfg.baseUrl && cfg.baseUrl.trim()) {
+    return cfg.baseUrl.replace(/\/$/, '');
+  }
   const envUrl = import.meta.env?.VITE_GAO_API_BASE_URL || import.meta.env?.GAO_API_BASE_URL;
   if (envUrl && typeof envUrl === 'string' && envUrl.trim()) {
     return envUrl.replace(/\/$/, '');
   }
   return GAO_API_BASE_URL;
-};
+}
 
-export const API_BASE_URL = getApiBaseUrl();
+export const API_BASE_URL = getActiveApiBaseUrl();
 
 export interface ApiLogRecord {
   id: string;
@@ -66,8 +71,13 @@ export function recordLog(record: ApiLogRecord) {
 }
 
 export async function fetchFromApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  const cfg = getHardwareApiConfig();
+  const baseUrl = getActiveApiBaseUrl();
   const method = (options?.method || 'GET').toUpperCase();
-  const url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+  const targetUrl = endpoint.startsWith('http://') || endpoint.startsWith('https://') 
+    ? endpoint 
+    : `${baseUrl}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+  
   const startTime = performance.now();
 
   let requestBody: any = null;
@@ -85,11 +95,22 @@ export async function fetchFromApi<T>(endpoint: string, options?: RequestInit): 
   let isSuccess = false;
   let errorMsg: string | null = null;
 
+  const customHeaders: Record<string, string> = {};
+  if (cfg.apiKey && cfg.apiKey.trim()) {
+    const headerName = cfg.authHeaderName || 'X-API-Key';
+    if (headerName.toLowerCase() === 'authorization') {
+      customHeaders[headerName] = cfg.apiKey.startsWith('Bearer ') ? cfg.apiKey : `Bearer ${cfg.apiKey}`;
+    } else {
+      customHeaders[headerName] = cfg.apiKey;
+    }
+  }
+
   try {
-    const res = await fetch(url, {
+    const res = await fetch(targetUrl, {
       ...options,
       headers: {
         'Accept': 'application/json',
+        ...customHeaders,
         ...(options?.body ? { 'Content-Type': 'application/json' } : {}),
         ...(options?.headers || {})
       }
@@ -118,6 +139,37 @@ export async function fetchFromApi<T>(endpoint: string, options?: RequestInit): 
       return responseData as T;
     }
   } catch (err: any) {
+    // If direct browser fetch failed (e.g., CORS restriction), attempt backend gateway proxy fallback
+    if (!statusCode && (targetUrl.startsWith('http://') || targetUrl.startsWith('https://')) && !endpoint.includes('/api/gateway/proxy')) {
+      try {
+        const proxyRes = await fetch('/api/gateway/proxy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: targetUrl,
+            method,
+            authHeaderName: cfg.authHeaderName || 'X-API-Key',
+            apiKey: cfg.apiKey,
+            payload: requestBody
+          })
+        });
+        const proxyJson = await proxyRes.json();
+        statusCode = proxyJson.status || proxyRes.status;
+        statusText = proxyJson.statusText || 'OK (via Gateway Proxy)';
+        responseData = proxyJson.data;
+
+        if (proxyRes.ok && (proxyJson.ok || proxyJson.status === 200)) {
+          isSuccess = true;
+          return responseData as T;
+        } else {
+          errorMsg = proxyJson.error || `Gateway proxy request failed with status ${statusCode}`;
+          throw new Error(errorMsg);
+        }
+      } catch (proxyErr: any) {
+        errorMsg = proxyErr?.message || err?.message || 'Network Error';
+      }
+    }
+
     if (!statusCode) {
       statusCode = 0;
       statusText = 'Network Error';
@@ -134,7 +186,7 @@ export async function fetchFromApi<T>(endpoint: string, options?: RequestInit): 
       timestamp: new Date().toISOString(),
       method,
       endpoint,
-      url,
+      url: targetUrl,
       status: statusCode,
       statusText,
       responseTime: durationMs,
