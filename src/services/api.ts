@@ -850,72 +850,32 @@ export async function fetchGaoAssetTrackingData(): Promise<{
     ]
   }));
 
-  if (sites.length === 0) {
-    sites.push({
-      id: 'site-gao-facility',
-      name: 'GAO RFID UHF Tracking Facility',
-      code: 'GAO-01',
-      address: 'GAO RFID UHF Coverage Field',
-      manager: 'GAO Field Supervisor',
-      activeAssetsCount: assets.length,
-      totalAssetsValue: assets.length * 120,
-      coordinates: { lat: 43.7615, lng: -79.4111 },
-      zones: [
-        {
-          id: 'zone-antenna-1',
-          siteId: 'site-gao-facility',
-          name: 'Antenna Zone 1',
-          type: 'Work Area',
-          readerIds: ['reader-gao-antenna-1'],
-          capacity: 50,
-          currentCount: assets.length,
-          color: '#2563eb'
-        }
-      ]
-    });
-  }
-
-  const readers: Reader[] = [
+  // If real tags arrived with locations, build site/reader records for them; otherwise keep empty
+  const readers: Reader[] = sites.length > 0 ? [
     {
       id: 'reader-gao-antenna-1',
-      siteId: sites[0]?.id || 'site-gao-facility',
-      siteName: sites[0]?.name || 'GAO RFID UHF Tracking Facility',
-      name: 'GAO UHF Reader Antenna 1',
+      siteId: sites[0]?.id,
+      siteName: sites[0]?.name,
+      name: `UHF Gateway — ${sites[0]?.name}`,
       type: 'Fixed Portal',
-      ipAddress: 'www.i360services.com',
-      zoneId: 'zone-1',
-      zoneName: 'Antenna Zone 1',
+      ipAddress: 'API Connected',
+      zoneId: sites[0]?.zones?.[0]?.id || 'zone-1',
+      zoneName: sites[0]?.zones?.[0]?.name || 'Coverage Area',
       antennaPowerDbm: 30,
       status: 'Online',
       lastHeartbeat: new Date().toISOString(),
-      firmwareVersion: 'v4.2.0-GAO',
-      readCountTotal: 1250,
-      bufferedEventsCount: 0
-    },
-    {
-      id: 'reader-gao-antenna-2',
-      siteId: sites[0]?.id || 'site-gao-facility',
-      siteName: sites[0]?.name || 'GAO RFID UHF Tracking Facility',
-      name: 'GAO UHF Reader Antenna 2',
-      type: 'Fixed Portal',
-      ipAddress: 'www.i360services.com',
-      zoneId: 'zone-2',
-      zoneName: 'Antenna Zone 2',
-      antennaPowerDbm: 30,
-      status: 'Online',
-      lastHeartbeat: new Date().toISOString(),
-      firmwareVersion: 'v4.2.0-GAO',
-      readCountTotal: 840,
+      firmwareVersion: 'v4.2.0',
+      readCountTotal: eventsList.length,
       bufferedEventsCount: 0
     }
-  ];
+  ] : [];
 
   return {
     assets,
     events: eventsList,
     sites,
     readers,
-    historyCount: totalCount
+    historyCount: assets.length > 0 ? totalCount : 0
   };
 }
 

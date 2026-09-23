@@ -195,6 +195,16 @@ export const ReportsAnalyticsView: React.FC<ReportsAnalyticsViewProps> = ({
     setTimeout(() => setExportSuccess(null), 3000);
   };
 
+  if (!assets || assets.length === 0) {
+    return (
+      <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-500 space-y-3">
+        <FileSpreadsheet className="w-10 h-10 text-slate-300 mx-auto" />
+        <h3 className="font-bold text-base text-slate-800">No data available for analysis.</h3>
+        <p className="text-xs text-slate-500 max-w-sm mx-auto">Asset financial analysis, TCO metrics, depreciation schedules, and maintenance cost reports will calculate once assets are added.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       

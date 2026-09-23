@@ -11,6 +11,14 @@ var dbInstance = null;
 var isConnected = false;
 var connectionError = null;
 var lastSyncedAt = null;
+function cleanMongoDoc(doc) {
+  if (!doc) return doc;
+  const { _id, ...rest } = doc;
+  return {
+    id: doc.id || (_id ? String(_id) : void 0),
+    ...rest
+  };
+}
 async function connectToMongoDB() {
   try {
     let rawUri = process.env.MONGODB_URI;
@@ -138,2202 +146,163 @@ function setLastSyncedAt(timestamp) {
 // src/data/postmanCollection.ts
 var aperturePostmanCollection = {
   "info": {
-    "_postman_id": "8fa21e90-71a4-4cd1-9c95-4912676a5624",
-    "name": "Aperture Asset Tracking API",
-    "description": "Production Postman collection and Mock Server configuration for the Aperture RFID & IoT Asset Tracking System API. Every endpoint is fully documented with schema assertions, Tests scripts, and saved example responses matching live and mock payloads.",
+    "_postman_id": "gao-rfid-uhf-tracking-apis-v1",
+    "name": "GAO RFID UHF People & Asset Tracking API",
+    "description": "Official Web APIs implemented by GAO RFID INC. for people and asset tracking. Server host: https://www.i360services.com/peopletrackinguhf. Hardware demo setup: 1 reader with 2 antennas, each covering a zone (Zone1, Zone2).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     {
-      "key": "base_url",
-      "value": "{{current_domain}}",
+      "key": "host",
+      "value": "https://www.i360services.com/peopletrackinguhf",
       "type": "string",
-      "description": "Publicly accessible Live Base URL of the Aperture Asset Tracking API"
-    },
-    {
-      "key": "url",
-      "value": "{{current_domain}}",
-      "type": "string",
-      "description": "Base URL of the Aperture Asset Tracking API"
+      "description": "GAO RFID UHF Server Host URL"
     }
   ],
   "item": [
     {
-      "name": "Live Tags (RFID)",
-      "description": "Real-time RFID tag stream ingestion, polling, and inventory endpoints compatible with GAO RFID and LLRP readers.",
-      "item": [
-        {
-          "name": "Get Tags In Real Time",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  'pm.test("Status code is 200", function () {',
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  'pm.test("Response matches expected GAO RFID shape", function () {',
-                  "    var jsonData = pm.response.json();",
-                  '    pm.expect(jsonData).to.have.property("status", 200);',
-                  '    pm.expect(jsonData).to.have.property("message", "Success");',
-                  '    pm.expect(jsonData).to.have.property("protocol", "GAO-RFID-HTTP-JSON");',
-                  '    pm.expect(jsonData).to.have.property("authenticated");',
-                  '    pm.expect(jsonData).to.have.property("timestamp");',
-                  '    pm.expect(jsonData).to.have.property("tagCount");',
-                  '    pm.expect(jsonData).to.have.property("tags");',
-                  "    pm.expect(Array.isArray(jsonData.tags)).to.be.true;",
-                  "    if (jsonData.tags.length > 0) {",
-                  "        var tag = jsonData.tags[0];",
-                  '        pm.expect(tag).to.have.property("epc");',
-                  '        pm.expect(tag).to.have.property("assetId");',
-                  '        pm.expect(tag).to.have.property("name");',
-                  '        pm.expect(tag).to.have.property("category");',
-                  '        pm.expect(tag).to.have.property("status");',
-                  '        pm.expect(tag).to.have.property("zone");',
-                  '        pm.expect(tag).to.have.property("lastSeen");',
-                  '        pm.expect(tag).to.have.property("rssi");',
-                  '        pm.expect(tag).to.have.property("site");',
-                  "    }",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{url}}/api/gao/getTagsInRealTime",
-              "host": ["{{url}}"],
-              "path": ["api", "gao", "getTagsInRealTime"]
-            },
-            "description": "Polls real-time GAO RFID tags in transit with epc, assetId, name, category, status, zone, lastSeen, rssi, and site."
+      "name": "1. Get History Total Count",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
           },
-          "response": [
-            {
-              "name": "Successful Real-Time Tags Response",
-              "originalRequest": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Accept",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{url}}/api/gao/getTagsInRealTime",
-                  "host": ["{{url}}"],
-                  "path": ["api", "gao", "getTagsInRealTime"]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "cookie": [],
-              "body": '{\n  "status": 200,\n  "message": "Success",\n  "protocol": "GAO-RFID-HTTP-JSON",\n  "authenticated": true,\n  "timestamp": "{{$isoTimestamp}}",\n  "tagCount": 3,\n  "tags": [\n    {\n      "epc": "E2801191A000001000000456",\n      "assetId": "ast-1001",\n      "name": "DeWalt Impact Driver",\n      "category": "Power Tools",\n      "status": "In Zone",\n      "zone": "Laydown Yard A",\n      "lastSeen": "{{$isoTimestamp}}",\n      "rssi": -50,\n      "site": "Downtown Metro Tower"\n    }\n  ]\n}'
-            }
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          }
+        ],
+        "url": {
+          "raw": "{{host}}/api/GetHistoryTotalCount",
+          "host": [
+            "{{host}}"
+          ],
+          "path": [
+            "api",
+            "GetHistoryTotalCount"
           ]
         },
+        "description": "Function: GAO software will accept this request and return a total number of the history data in GAO software system.\n\nResponse Example:\n100\n(100 means that there are 100 history data in total in the cloud server. 0 means that there is no any history data.)"
+      },
+      "response": [
         {
-          "name": "Get RFID Tag Inventory",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  'pm.test("Status code is 200", function () {',
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  'pm.test("Response matches GAO-RFID-COMPATIBLE shape", function () {',
-                  "    var jsonData = pm.response.json();",
-                  '    pm.expect(jsonData).to.have.property("protocol", "GAO-RFID-COMPATIBLE");',
-                  '    pm.expect(jsonData).to.have.property("totalTagsCount");',
-                  '    pm.expect(jsonData).to.have.property("tags");',
-                  "    pm.expect(Array.isArray(jsonData.tags)).to.be.true;",
-                  "    if (jsonData.tags.length > 0) {",
-                  "        var tag = jsonData.tags[0];",
-                  '        pm.expect(tag).to.have.property("tagEpc");',
-                  '        pm.expect(tag).to.have.property("assetId");',
-                  '        pm.expect(tag).to.have.property("assetName");',
-                  '        pm.expect(tag).to.have.property("category");',
-                  '        pm.expect(tag).to.have.property("status");',
-                  '        pm.expect(tag).to.have.property("lastSeenAt");',
-                  '        pm.expect(tag).to.have.property("zoneName");',
-                  '        pm.expect(tag).to.have.property("rssi");',
-                  "    }",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
+          "name": "200 OK - History Count Example",
+          "originalRequest": {
             "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
             "url": {
-              "raw": "{{url}}/api/v1/rfid/tags",
-              "host": ["{{url}}"],
-              "path": ["api", "v1", "rfid", "tags"]
-            },
-            "description": "Returns GAO RFID compatible list of registered tags using tagEpc and assetName keys."
-          },
-          "response": [
-            {
-              "name": "Successful Tag Inventory Response",
-              "originalRequest": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Accept",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{url}}/api/v1/rfid/tags",
-                  "host": ["{{url}}"],
-                  "path": ["api", "v1", "rfid", "tags"]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "cookie": [],
-              "body": '{\n  "protocol": "GAO-RFID-COMPATIBLE",\n  "totalTagsCount": 3,\n  "tags": [\n    {\n      "tagEpc": "E2801191A000001000000456",\n      "assetId": "ast-1001",\n      "assetName": "DeWalt Impact Driver",\n      "category": "Power Tools",\n      "status": "In Zone",\n      "lastSeenAt": "{{$isoTimestamp}}",\n      "zoneName": "Laydown Yard A",\n      "rssi": -50\n    }\n  ]\n}'
+              "raw": "{{host}}/api/GetHistoryTotalCount"
             }
-          ]
-        },
-        {
-          "name": "Ingest RFID Tag Read",
-          "event": [
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "text",
+          "header": [
             {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  'pm.test("Status code is 200", function () {',
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  'pm.test("Response matches GAO-RFID-LLRP-v2 ingestion shape", function () {',
-                  "    var jsonData = pm.response.json();",
-                  '    pm.expect(jsonData).to.have.property("status", "INGESTED");',
-                  '    pm.expect(jsonData).to.have.property("protocol", "GAO-RFID-LLRP-v2");',
-                  '    pm.expect(jsonData).to.have.property("event");',
-                  "    var evt = jsonData.event;",
-                  '    pm.expect(evt).to.have.property("id");',
-                  '    pm.expect(evt).to.have.property("epc");',
-                  '    pm.expect(evt).to.have.property("assetId");',
-                  '    pm.expect(evt).to.have.property("assetName");',
-                  '    pm.expect(evt).to.have.property("readerId");',
-                  '    pm.expect(evt).to.have.property("readerName");',
-                  '    pm.expect(evt).to.have.property("siteId");',
-                  '    pm.expect(evt).to.have.property("siteName");',
-                  '    pm.expect(evt).to.have.property("zoneId");',
-                  '    pm.expect(evt).to.have.property("zoneName");',
-                  '    pm.expect(evt).to.have.property("rssi");',
-                  '    pm.expect(evt).to.have.property("timestamp");',
-                  '    pm.expect(evt).to.have.property("eventType", "SCAN");',
-                  '    pm.expect(evt).to.have.property("antennaId");',
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
+              "key": "Content-Type",
+              "value": "application/json; charset=utf-8"
             }
           ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": '{\n  "epc": "E2801191A000001000000456",\n  "readerId": "reader-101",\n  "ant": 1,\n  "rssi": -48\n}',
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{url}}/api/gao/read-tags",
-              "host": ["{{url}}"],
-              "path": ["api", "gao", "read-tags"]
-            },
-            "description": "Ingests inbound RFID tag pulse event from portal or handheld gateway reader."
-          },
-          "response": [
-            {
-              "name": "Successful Tag Read Ingestion Response",
-              "originalRequest": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": '{\n  "epc": "E2801191A000001000000456",\n  "readerId": "reader-101",\n  "ant": 1,\n  "rssi": -48\n}',
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "url": {
-                  "raw": "{{url}}/api/gao/read-tags",
-                  "host": ["{{url}}"],
-                  "path": ["api", "gao", "read-tags"]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "cookie": [],
-              "body": '{\n  "status": "INGESTED",\n  "protocol": "GAO-RFID-LLRP-v2",\n  "event": {\n    "id": "evt-gao-example",\n    "epc": "E2801191A000001000000456",\n    "assetId": "ast-1001",\n    "assetName": "DeWalt Impact Driver",\n    "readerId": "reader-101",\n    "readerName": "Gate Portal Reader",\n    "siteId": "site-01",\n    "siteName": "Downtown Metro Tower",\n    "zoneId": "z-01",\n    "zoneName": "Laydown Yard A",\n    "rssi": -48,\n    "timestamp": "{{$isoTimestamp}}",\n    "eventType": "SCAN",\n    "antennaId": 1\n  }\n}'
-            }
-          ]
+          "body": "100"
         }
       ]
     },
     {
-      "name": "Assets",
-      "description": "Full CRUD operations for enterprise tool, equipment, and machinery inventory with UHF RFID tag bindings.",
-      "item": [
-        {
-          "name": "Get All Assets",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  'pm.test("Status code is 200", function () {',
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  'pm.test("Response is an array of asset records", function () {',
-                  "    var jsonData = pm.response.json();",
-                  "    pm.expect(Array.isArray(jsonData)).to.be.true;",
-                  "    if (jsonData.length > 0) {",
-                  "        var asset = jsonData[0];",
-                  '        pm.expect(asset).to.have.property("id");',
-                  '        pm.expect(asset).to.have.property("name");',
-                  '        pm.expect(asset).to.have.property("category");',
-                  '        pm.expect(asset).to.have.property("status");',
-                  '        pm.expect(asset).to.have.property("siteId");',
-                  "    }",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
+      "name": "2. Get Specific History Data",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          }
+        ],
+        "url": {
+          "raw": "{{host}}/api/GetHistoryRecords/0/30",
+          "host": [
+            "{{host}}"
           ],
-          "request": {
+          "path": [
+            "api",
+            "GetHistoryRecords",
+            "0",
+            "30"
+          ]
+        },
+        "description": "Function: Get specific history data by some parameters.\nWhen getting this request, GAO system will order the history data by the generated time in descending order.\n\nParameters:\n- SkipCount: Number of skipping the history data from the beginning.\n- TakeCount: Number of returning the history data for this request. The max value is 200.\n\nIf the number of returned history data is less than TakeCount, it means that it gets the end of the history data and there is no more history data in the cloud server.\n\nDuration: unit is hours (LeaveTime minus EnterTime)."
+      },
+      "response": [
+        {
+          "name": "200 OK - History Records Example",
+          "originalRequest": {
             "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
             "url": {
-              "raw": "{{url}}/api/assets",
-              "host": ["{{url}}"],
-              "path": ["api", "assets"]
-            },
-            "description": "Retrieves the complete fleet asset inventory."
-          },
-          "response": [
-            {
-              "name": "List Assets Example Response",
-              "originalRequest": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Accept",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{url}}/api/assets",
-                  "host": ["{{url}}"],
-                  "path": ["api", "assets"]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "cookie": [],
-              "body": '[\n  {\n    "id": "ast-1001",\n    "name": "DeWalt 20V MAX Impact Driver",\n    "category": "Power Tools",\n    "subCategory": "Fastening Tools",\n    "manufacturer": "DeWalt",\n    "model": "DCF887B",\n    "serialNumber": "SN-DW-49210",\n    "tagEpc": "E2801191A000001000000456",\n    "qrCode": "QR-9041",\n    "status": "In Zone",\n    "siteId": "site-01",\n    "siteName": "Downtown Metro Tower",\n    "zoneId": "z-01",\n    "zoneName": "Laydown Yard A",\n    "purchaseDate": "2024-03-15",\n    "cost": 199,\n    "condition": "Good",\n    "lastSeenAt": "{{$isoTimestamp}}",\n    "lastReaderId": "reader-101",\n    "rssi": -50\n  },\n  {\n    "id": "ast-1002",\n    "name": "Caterpillar 320D Hydraulic Excavator",\n    "category": "Heavy Equipment",\n    "subCategory": "Excavation",\n    "manufacturer": "CAT",\n    "model": "320D L",\n    "serialNumber": "CAT320D-99412",\n    "tagEpc": "E2801191A000001000000457",\n    "qrCode": "QR-3011",\n    "status": "In Zone",\n    "siteId": "site-01",\n    "siteName": "Downtown Metro Tower",\n    "zoneId": "z-02",\n    "zoneName": "East Loading Dock",\n    "purchaseDate": "2023-08-10",\n    "cost": 185000,\n    "condition": "Excellent",\n    "lastSeenAt": "{{$isoTimestamp}}",\n    "lastReaderId": "reader-102",\n    "rssi": -44\n  }\n]'
+              "raw": "{{host}}/api/GetHistoryRecords/10/30"
             }
-          ]
-        },
-        {
-          "name": "Create Asset",
-          "event": [
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
             {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  'pm.test("Status code is 201 Created", function () {',
-                  "    pm.response.to.have.status(201);",
-                  "});",
-                  'pm.test("Asset record created with assigned ID and tag", function () {',
-                  "    var jsonData = pm.response.json();",
-                  '    pm.expect(jsonData).to.have.property("id");',
-                  '    pm.expect(jsonData).to.have.property("name");',
-                  '    pm.expect(jsonData).to.have.property("category");',
-                  '    pm.expect(jsonData).to.have.property("siteId");',
-                  '    pm.expect(jsonData).to.have.property("cost");',
-                  '    pm.expect(jsonData).to.have.property("tagEpc");',
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
+              "key": "Content-Type",
+              "value": "application/json; charset=utf-8"
             }
           ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": '{\n  "name": "Milwaukee M18 Fuel Hammer Drill",\n  "category": "Power Tools",\n  "siteId": "site-01",\n  "cost": 299\n}',
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{url}}/api/assets",
-              "host": ["{{url}}"],
-              "path": ["api", "assets"]
-            },
-            "description": "Registers a new asset in the system registry."
-          },
-          "response": [
-            {
-              "name": "Create Asset Example Response",
-              "originalRequest": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": '{\n  "name": "Milwaukee M18 Fuel Hammer Drill",\n  "category": "Power Tools",\n  "siteId": "site-01",\n  "cost": 299\n}',
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "url": {
-                  "raw": "{{url}}/api/assets",
-                  "host": ["{{url}}"],
-                  "path": ["api", "assets"]
-                }
-              },
-              "status": "Created",
-              "code": 201,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "cookie": [],
-              "body": '{\n  "id": "ast-1003",\n  "name": "Milwaukee M18 Fuel Hammer Drill",\n  "category": "Power Tools",\n  "subCategory": "General",\n  "manufacturer": "Generic",\n  "model": "Standard",\n  "serialNumber": "SN-849102",\n  "tagEpc": "E2801191A000001000000789",\n  "qrCode": "QR-4912",\n  "status": "In Zone",\n  "siteId": "site-01",\n  "siteName": "Downtown Metro Tower",\n  "zoneId": "z-01",\n  "zoneName": "Laydown Yard A",\n  "purchaseDate": "2026-08-17",\n  "cost": 299,\n  "isRental": false,\n  "rentalCostPerDay": 0,\n  "condition": "Excellent",\n  "lastSeenAt": "{{$isoTimestamp}}",\n  "lastReaderId": "reader-101",\n  "rssi": -50\n}'
-            }
-          ]
-        },
-        {
-          "name": "Update Asset",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  'pm.test("Status code is 200 OK", function () {',
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  'pm.test("Updated asset fields match payload", function () {',
-                  "    var jsonData = pm.response.json();",
-                  '    pm.expect(jsonData).to.have.property("id");',
-                  '    pm.expect(jsonData).to.have.property("status", "In Zone");',
-                  '    pm.expect(jsonData).to.have.property("condition", "Good");',
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": '{\n  "status": "In Zone",\n  "condition": "Good"\n}',
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{url}}/api/assets/:id",
-              "host": ["{{url}}"],
-              "path": ["api", "assets", ":id"],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "ast-1001",
-                  "description": "Asset Unique Identifier"
-                }
-              ]
-            },
-            "description": "Updates asset status, condition, or spatiotemporal metadata."
-          },
-          "response": [
-            {
-              "name": "Update Asset Example Response",
-              "originalRequest": {
-                "method": "PUT",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": '{\n  "status": "In Zone",\n  "condition": "Good"\n}',
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "url": {
-                  "raw": "{{url}}/api/assets/:id",
-                  "host": ["{{url}}"],
-                  "path": ["api", "assets", ":id"],
-                  "variable": [
-                    {
-                      "key": "id",
-                      "value": "ast-1001"
-                    }
-                  ]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "cookie": [],
-              "body": '{\n  "id": "ast-1001",\n  "name": "DeWalt 20V MAX Impact Driver",\n  "category": "Power Tools",\n  "status": "In Zone",\n  "condition": "Good",\n  "siteId": "site-01",\n  "siteName": "Downtown Metro Tower",\n  "zoneId": "z-01",\n  "zoneName": "Laydown Yard A",\n  "cost": 199,\n  "tagEpc": "E2801191A000001000000456",\n  "lastSeenAt": "{{$isoTimestamp}}"\n}'
-            }
-          ]
-        },
-        {
-          "name": "Delete Asset",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  'pm.test("Status code is 200 OK", function () {',
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  'pm.test("Response confirms asset removal", function () {',
-                  "    var jsonData = pm.response.json();",
-                  '    pm.expect(jsonData).to.have.property("message");',
-                  '    pm.expect(jsonData).to.have.property("id");',
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{url}}/api/assets/:id",
-              "host": ["{{url}}"],
-              "path": ["api", "assets", ":id"],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "ast-1001",
-                  "description": "Asset Unique Identifier"
-                }
-              ]
-            },
-            "description": "Removes an asset from the system registry."
-          },
-          "response": [
-            {
-              "name": "Delete Asset Example Response",
-              "originalRequest": {
-                "method": "DELETE",
-                "header": [
-                  {
-                    "key": "Accept",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{url}}/api/assets/:id",
-                  "host": ["{{url}}"],
-                  "path": ["api", "assets", ":id"],
-                  "variable": [
-                    {
-                      "key": "id",
-                      "value": "ast-1001"
-                    }
-                  ]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "cookie": [],
-              "body": '{\n  "message": "Asset removed successfully",\n  "id": "ast-1001"\n}'
-            }
-          ]
+          "body": '[\n  {\n    "TagID": "E28011606000020788842D31",\n    "FirstName": "John",\n    "LastName": "Smith",\n    "LocationName": "d6",\n    "EnterTime": "2026-06-02 15:27:02",\n    "LeaveTime": "2026-06-02 15:57:02",\n    "Duration": 0.5\n  },\n  {\n    "TagID": "E28011606000020788842D31",\n    "FirstName": "Jack",\n    "LastName": "Wince",\n    "LocationName": "d8",\n    "EnterTimeStr": "2026-04-28 10:17:42",\n    "LeaveTimeStr": "2026-04-28 11:47:42",\n    "Duration": 1.5\n  }\n]'
         }
       ]
     },
     {
-      "name": "Checkouts",
-      "description": "Custody tracking, tool sign-outs, operator badge bindings, and return condition inspections.",
-      "item": [
-        {
-          "name": "Get All Checkouts",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  'pm.test("Status code is 200", function () {',
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  'pm.test("Response is an array of custody checkouts", function () {',
-                  "    var jsonData = pm.response.json();",
-                  "    pm.expect(Array.isArray(jsonData)).to.be.true;",
-                  "    if (jsonData.length > 0) {",
-                  "        var chk = jsonData[0];",
-                  '        pm.expect(chk).to.have.property("id");',
-                  '        pm.expect(chk).to.have.property("assetId");',
-                  '        pm.expect(chk).to.have.property("userId");',
-                  '        pm.expect(chk).to.have.property("status");',
-                  "    }",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
+      "name": "3. Get Tags in Real-time",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          }
+        ],
+        "url": {
+          "raw": "{{host}}/api/GetTagsInRealtime",
+          "host": [
+            "{{host}}"
           ],
-          "request": {
+          "path": [
+            "api",
+            "GetTagsInRealtime"
+          ]
+        },
+        "description": "Function: Get tags data reported by the reader.\nDemo Hardware Setup: 1 reader and the reader has 2 antennas, each antenna is covering a zone (Zone1, Zone2).\n\nWhen getting this request, GAO system will order the tag raw data by the generated time in descending order. GAO software will extract all the current raw data from the tags queue and put them in the response."
+      },
+      "response": [
+        {
+          "name": "200 OK - Real-Time Tags Example",
+          "originalRequest": {
             "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
             "url": {
-              "raw": "{{url}}/api/checkouts",
-              "host": ["{{url}}"],
-              "path": ["api", "checkouts"]
-            },
-            "description": "Lists all active and historic tool custody checkouts."
-          },
-          "response": [
-            {
-              "name": "List Checkouts Example Response",
-              "originalRequest": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Accept",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{url}}/api/checkouts",
-                  "host": ["{{url}}"],
-                  "path": ["api", "checkouts"]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "cookie": [],
-              "body": '[\n  {\n    "id": "chk-8901",\n    "assetId": "ast-1001",\n    "assetName": "DeWalt Impact Driver",\n    "assetCategory": "Power Tools",\n    "tagEpc": "E2801191A000001000000456",\n    "userId": "usr-3",\n    "userName": "Carlos Mendez",\n    "badgeId": "BDG-1029",\n    "checkoutTime": "{{$isoTimestamp}}",\n    "expectedReturn": "{{$isoTimestamp}}",\n    "jobId": "job-downtown-01",\n    "jobName": "Downtown Tower Structural Framing",\n    "checkoutCondition": "Good",\n    "notes": "Issued for 4th floor structural framing",\n    "status": "ACTIVE"\n  }\n]'
+              "raw": "{{host}}/api/GetTagsInRealtime"
             }
-          ]
-        },
-        {
-          "name": "Create Checkout",
-          "event": [
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
             {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  'pm.test("Status code is 201 Created", function () {',
-                  "    pm.response.to.have.status(201);",
-                  "});",
-                  'pm.test("Checkout issued with active custody status", function () {',
-                  "    var jsonData = pm.response.json();",
-                  '    pm.expect(jsonData).to.have.property("id");',
-                  '    pm.expect(jsonData).to.have.property("assetId");',
-                  '    pm.expect(jsonData).to.have.property("userId");',
-                  '    pm.expect(jsonData).to.have.property("status", "ACTIVE");',
-                  '    pm.expect(jsonData).to.have.property("expectedReturn");',
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
+              "key": "Content-Type",
+              "value": "application/json; charset=utf-8"
             }
           ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": '{\n  "assetId": "ast-1001",\n  "userId": "usr-3",\n  "jobId": "job-downtown-01",\n  "expectedReturnHours": 8\n}',
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{url}}/api/checkouts",
-              "host": ["{{url}}"],
-              "path": ["api", "checkouts"]
-            },
-            "description": "Signs out an asset to a field operator or job assignment."
-          },
-          "response": [
-            {
-              "name": "Create Checkout Example Response",
-              "originalRequest": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": '{\n  "assetId": "ast-1001",\n  "userId": "usr-3",\n  "jobId": "job-downtown-01",\n  "expectedReturnHours": 8\n}',
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "url": {
-                  "raw": "{{url}}/api/checkouts",
-                  "host": ["{{url}}"],
-                  "path": ["api", "checkouts"]
-                }
-              },
-              "status": "Created",
-              "code": 201,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "cookie": [],
-              "body": '{\n  "id": "chk-8902",\n  "assetId": "ast-1001",\n  "assetName": "DeWalt Impact Driver",\n  "assetCategory": "Power Tools",\n  "tagEpc": "E2801191A000001000000456",\n  "userId": "usr-3",\n  "userName": "Carlos Mendez",\n  "badgeId": "BDG-1029",\n  "checkoutTime": "{{$isoTimestamp}}",\n  "expectedReturn": "{{$isoTimestamp}}",\n  "jobId": "job-downtown-01",\n  "jobName": "Job #job-downtown-01",\n  "checkoutCondition": "Good",\n  "notes": "Handheld scanner checkout",\n  "status": "ACTIVE"\n}'
-            }
-          ]
-        },
-        {
-          "name": "Return Checkout",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  'pm.test("Status code is 200 OK", function () {',
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  'pm.test("Checkout status marked as RETURNED", function () {',
-                  "    var jsonData = pm.response.json();",
-                  '    pm.expect(jsonData).to.have.property("id");',
-                  '    pm.expect(jsonData).to.have.property("status", "RETURNED");',
-                  '    pm.expect(jsonData).to.have.property("actualReturn");',
-                  '    pm.expect(jsonData).to.have.property("returnCondition");',
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": '{\n  "condition": "Good"\n}',
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{url}}/api/checkouts/:id/return",
-              "host": ["{{url}}"],
-              "path": ["api", "checkouts", ":id", "return"],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "chk-8901",
-                  "description": "Checkout Unique Identifier"
-                }
-              ]
-            },
-            "description": "Processes return of checked-out equipment back into zone storage."
-          },
-          "response": [
-            {
-              "name": "Return Checkout Example Response",
-              "originalRequest": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": '{\n  "condition": "Good"\n}',
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "url": {
-                  "raw": "{{url}}/api/checkouts/:id/return",
-                  "host": ["{{url}}"],
-                  "path": ["api", "checkouts", ":id", "return"],
-                  "variable": [
-                    {
-                      "key": "id",
-                      "value": "chk-8901"
-                    }
-                  ]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "cookie": [],
-              "body": '{\n  "id": "chk-8901",\n  "assetId": "ast-1001",\n  "assetName": "DeWalt Impact Driver",\n  "userId": "usr-3",\n  "userName": "Carlos Mendez",\n  "checkoutTime": "{{$isoTimestamp}}",\n  "actualReturn": "{{$isoTimestamp}}",\n  "returnCondition": "Good",\n  "status": "RETURNED"\n}'
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "Alerts",
-      "description": "Security alarms, perimeter breach events, curfew violations, and supervisor resolutions.",
-      "item": [
-        {
-          "name": "Get All Alerts",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  'pm.test("Status code is 200", function () {',
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  'pm.test("Response is an array of system alerts", function () {',
-                  "    var jsonData = pm.response.json();",
-                  "    pm.expect(Array.isArray(jsonData)).to.be.true;",
-                  "    if (jsonData.length > 0) {",
-                  "        var alert = jsonData[0];",
-                  '        pm.expect(alert).to.have.property("id");',
-                  '        pm.expect(alert).to.have.property("type");',
-                  '        pm.expect(alert).to.have.property("severity");',
-                  '        pm.expect(alert).to.have.property("resolved");',
-                  "    }",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{url}}/api/alerts",
-              "host": ["{{url}}"],
-              "path": ["api", "alerts"]
-            },
-            "description": "Fetches all active and resolved perimeter/geofence alerts."
-          },
-          "response": [
-            {
-              "name": "List Alerts Example Response",
-              "originalRequest": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Accept",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{url}}/api/alerts",
-                  "host": ["{{url}}"],
-                  "path": ["api", "alerts"]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "cookie": [],
-              "body": '[\n  {\n    "id": "alt-4401",\n    "type": "PERIMETER_BREACH",\n    "severity": "CRITICAL",\n    "assetId": "ast-1001",\n    "assetName": "DeWalt Impact Driver",\n    "siteId": "site-01",\n    "siteName": "Downtown Metro Tower",\n    "zoneId": "z-01",\n    "zoneName": "Laydown Yard A",\n    "triggeredAt": "{{$isoTimestamp}}",\n    "resolved": false,\n    "message": "Asset E2801191A000001000000456 detected outside authorized geofence radius"\n  }\n]'
-            }
-          ]
-        },
-        {
-          "name": "Create Alert",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  'pm.test("Status code is 201 Created", function () {',
-                  "    pm.response.to.have.status(201);",
-                  "});",
-                  'pm.test("Alert successfully registered in security engine", function () {',
-                  "    var jsonData = pm.response.json();",
-                  '    pm.expect(jsonData).to.have.property("id");',
-                  '    pm.expect(jsonData).to.have.property("type");',
-                  '    pm.expect(jsonData).to.have.property("severity");',
-                  '    pm.expect(jsonData).to.have.property("resolved", false);',
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": '{\n  "type": "PERIMETER_BREACH",\n  "severity": "CRITICAL",\n  "assetId": "ast-1001",\n  "assetName": "DeWalt Impact Driver",\n  "message": "Manual perimeter alert trigger"\n}',
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{url}}/api/alerts",
-              "host": ["{{url}}"],
-              "path": ["api", "alerts"]
-            },
-            "description": "Publishes a new security or maintenance alert."
-          },
-          "response": [
-            {
-              "name": "Create Alert Example Response",
-              "originalRequest": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": '{\n  "type": "PERIMETER_BREACH",\n  "severity": "CRITICAL",\n  "assetId": "ast-1001",\n  "assetName": "DeWalt Impact Driver",\n  "message": "Manual perimeter alert trigger"\n}',
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "url": {
-                  "raw": "{{url}}/api/alerts",
-                  "host": ["{{url}}"],
-                  "path": ["api", "alerts"]
-                }
-              },
-              "status": "Created",
-              "code": 201,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "cookie": [],
-              "body": '{\n  "id": "alt-4402",\n  "type": "PERIMETER_BREACH",\n  "severity": "CRITICAL",\n  "assetId": "ast-1001",\n  "assetName": "DeWalt Impact Driver",\n  "siteId": "site-01",\n  "siteName": "Downtown Metro Tower",\n  "zoneId": "z-01",\n  "zoneName": "Gate Portal",\n  "triggeredAt": "{{$isoTimestamp}}",\n  "resolved": false,\n  "message": "Manual perimeter alert trigger"\n}'
-            }
-          ]
-        },
-        {
-          "name": "Resolve Alert",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  'pm.test("Status code is 200 OK", function () {',
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  'pm.test("Alert marked resolved with auditor credentials", function () {',
-                  "    var jsonData = pm.response.json();",
-                  '    pm.expect(jsonData).to.have.property("id");',
-                  '    pm.expect(jsonData).to.have.property("resolved", true);',
-                  '    pm.expect(jsonData).to.have.property("resolvedAt");',
-                  '    pm.expect(jsonData).to.have.property("resolvedBy");',
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": '{\n  "resolvedBy": "Site Manager Sarah"\n}',
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{url}}/api/alerts/:id/resolve",
-              "host": ["{{url}}"],
-              "path": ["api", "alerts", ":id", "resolve"],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "alt-4401",
-                  "description": "Alert Unique Identifier"
-                }
-              ]
-            },
-            "description": "Marks an alert as investigated and resolved."
-          },
-          "response": [
-            {
-              "name": "Resolve Alert Example Response",
-              "originalRequest": {
-                "method": "PATCH",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": '{\n  "resolvedBy": "Site Manager Sarah"\n}',
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "url": {
-                  "raw": "{{url}}/api/alerts/:id/resolve",
-                  "host": ["{{url}}"],
-                  "path": ["api", "alerts", ":id", "resolve"],
-                  "variable": [
-                    {
-                      "key": "id",
-                      "value": "alt-4401"
-                    }
-                  ]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "cookie": [],
-              "body": '{\n  "id": "alt-4401",\n  "type": "PERIMETER_BREACH",\n  "severity": "CRITICAL",\n  "assetId": "ast-1001",\n  "assetName": "DeWalt Impact Driver",\n  "siteId": "site-01",\n  "siteName": "Downtown Metro Tower",\n  "zoneId": "z-01",\n  "zoneName": "Laydown Yard A",\n  "triggeredAt": "{{$isoTimestamp}}",\n  "resolved": true,\n  "resolvedAt": "{{$isoTimestamp}}",\n  "resolvedBy": "Site Manager Sarah",\n  "message": "Asset E2801191A000001000000456 detected outside authorized geofence radius"\n}'
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "Maintenance & Inventory",
-      "description": "Equipment servicing work orders, consumable RFID tag supplies, and stock quantity updates.",
-      "item": [
-        {
-          "name": "Get Maintenance Logs",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  'pm.test("Status code is 200", function () {',
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  'pm.test("Response is an array of maintenance work orders", function () {',
-                  "    var jsonData = pm.response.json();",
-                  "    pm.expect(Array.isArray(jsonData)).to.be.true;",
-                  "    if (jsonData.length > 0) {",
-                  "        var m = jsonData[0];",
-                  '        pm.expect(m).to.have.property("id");',
-                  '        pm.expect(m).to.have.property("assetId");',
-                  '        pm.expect(m).to.have.property("type");',
-                  '        pm.expect(m).to.have.property("cost");',
-                  "    }",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{url}}/api/maintenance",
-              "host": ["{{url}}"],
-              "path": ["api", "maintenance"]
-            },
-            "description": "Lists scheduled and historical equipment maintenance logs."
-          },
-          "response": [
-            {
-              "name": "List Maintenance Example Response",
-              "originalRequest": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Accept",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{url}}/api/maintenance",
-                  "host": ["{{url}}"],
-                  "path": ["api", "maintenance"]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "cookie": [],
-              "body": '[\n  {\n    "id": "maint-7001",\n    "assetId": "ast-1001",\n    "assetName": "DeWalt Impact Driver",\n    "type": "Preventive",\n    "date": "2026-08-17",\n    "scheduledDate": "2026-08-17",\n    "cost": 150,\n    "technician": "Elena Rostova",\n    "status": "Scheduled",\n    "notes": "100-hour rotor bushing & carbon brush inspection",\n    "workOrderId": "WO-8812"\n  }\n]'
-            }
-          ]
-        },
-        {
-          "name": "Create Maintenance Log",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  'pm.test("Status code is 201 Created", function () {',
-                  "    pm.response.to.have.status(201);",
-                  "});",
-                  'pm.test("Maintenance record registered with work order ID", function () {',
-                  "    var jsonData = pm.response.json();",
-                  '    pm.expect(jsonData).to.have.property("id");',
-                  '    pm.expect(jsonData).to.have.property("assetId");',
-                  '    pm.expect(jsonData).to.have.property("assetName");',
-                  '    pm.expect(jsonData).to.have.property("type");',
-                  '    pm.expect(jsonData).to.have.property("cost");',
-                  '    pm.expect(jsonData).to.have.property("workOrderId");',
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": '{\n  "assetId": "ast-1001",\n  "assetName": "DeWalt Impact Driver",\n  "type": "Preventive",\n  "cost": 150\n}',
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{url}}/api/maintenance",
-              "host": ["{{url}}"],
-              "path": ["api", "maintenance"]
-            },
-            "description": "Schedules maintenance work order for an asset."
-          },
-          "response": [
-            {
-              "name": "Create Maintenance Example Response",
-              "originalRequest": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": '{\n  "assetId": "ast-1001",\n  "assetName": "DeWalt Impact Driver",\n  "type": "Preventive",\n  "cost": 150\n}',
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "url": {
-                  "raw": "{{url}}/api/maintenance",
-                  "host": ["{{url}}"],
-                  "path": ["api", "maintenance"]
-                }
-              },
-              "status": "Created",
-              "code": 201,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "cookie": [],
-              "body": '{\n  "id": "maint-7002",\n  "assetId": "ast-1001",\n  "assetName": "DeWalt Impact Driver",\n  "type": "Preventive",\n  "date": "2026-08-17",\n  "scheduledDate": "2026-08-17",\n  "cost": 150,\n  "technician": "Elena Rostova",\n  "status": "Scheduled",\n  "notes": "",\n  "workOrderId": "WO-5491"\n}'
-            }
-          ]
-        },
-        {
-          "name": "Get Consumables Inventory",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  'pm.test("Status code is 200", function () {',
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  'pm.test("Response is an array of inventory items", function () {',
-                  "    var jsonData = pm.response.json();",
-                  "    pm.expect(Array.isArray(jsonData)).to.be.true;",
-                  "    if (jsonData.length > 0) {",
-                  "        var item = jsonData[0];",
-                  '        pm.expect(item).to.have.property("id");',
-                  '        pm.expect(item).to.have.property("name");',
-                  '        pm.expect(item).to.have.property("quantityOnHand");',
-                  '        pm.expect(item).to.have.property("minThreshold");',
-                  '        pm.expect(item).to.have.property("costPerUnit");',
-                  "    }",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{url}}/api/inventory",
-              "host": ["{{url}}"],
-              "path": ["api", "inventory"]
-            },
-            "description": "Lists consumable inventory (RFID hard tags, adhesive inlays, zip ties)."
-          },
-          "response": [
-            {
-              "name": "List Inventory Example Response",
-              "originalRequest": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Accept",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{url}}/api/inventory",
-                  "host": ["{{url}}"],
-                  "path": ["api", "inventory"]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "cookie": [],
-              "body": '[\n  {\n    "id": "inv-301",\n    "name": "Gen2 UHF RFID Metal-Mount Hard Tags",\n    "category": "Consumables",\n    "quantityOnHand": 250,\n    "minThreshold": 50,\n    "reorderPoint": 80,\n    "unit": "tags",\n    "costPerUnit": 2.45,\n    "siteId": "site-01",\n    "siteName": "Downtown Metro Tower"\n  },\n  {\n    "id": "inv-302",\n    "name": "High-Tack EPC UHF Adhesive Inlays (Roll)",\n    "category": "Supplies",\n    "quantityOnHand": 1200,\n    "minThreshold": 300,\n    "reorderPoint": 500,\n    "unit": "labels",\n    "costPerUnit": 0.35,\n    "siteId": "site-01",\n    "siteName": "Downtown Metro Tower"\n  }\n]'
-            }
-          ]
-        },
-        {
-          "name": "Update Inventory Quantity",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  'pm.test("Status code is 200 OK", function () {',
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  'pm.test("Inventory quantity updated successfully", function () {',
-                  "    var jsonData = pm.response.json();",
-                  '    pm.expect(jsonData).to.have.property("id");',
-                  "    pm.expect(jsonData.quantityOnHand === 75 || jsonData.quantity === 75).to.be.true;",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": '{\n  "quantity": 75\n}',
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{url}}/api/inventory/:id",
-              "host": ["{{url}}"],
-              "path": ["api", "inventory", ":id"],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "inv-301",
-                  "description": "Inventory SKU Unique Identifier"
-                }
-              ]
-            },
-            "description": "Modifies consumable stock level or reorder point."
-          },
-          "response": [
-            {
-              "name": "Update Inventory Example Response",
-              "originalRequest": {
-                "method": "PATCH",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": '{\n  "quantity": 75\n}',
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "url": {
-                  "raw": "{{url}}/api/inventory/:id",
-                  "host": ["{{url}}"],
-                  "path": ["api", "inventory", ":id"],
-                  "variable": [
-                    {
-                      "key": "id",
-                      "value": "inv-301"
-                    }
-                  ]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "cookie": [],
-              "body": '{\n  "id": "inv-301",\n  "name": "Gen2 UHF RFID Metal-Mount Hard Tags",\n  "category": "Consumables",\n  "quantityOnHand": 75,\n  "minThreshold": 50,\n  "reorderPoint": 80,\n  "unit": "tags",\n  "costPerUnit": 2.45,\n  "siteId": "site-01",\n  "siteName": "Downtown Metro Tower"\n}'
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "Users",
-      "description": "Personnel management, security badges, access control roles, and operator directory.",
-      "item": [
-        {
-          "name": "Get All Users",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  'pm.test("Status code is 200", function () {',
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  'pm.test("Response is an array of users", function () {',
-                  "    var jsonData = pm.response.json();",
-                  "    pm.expect(Array.isArray(jsonData)).to.be.true;",
-                  "    if (jsonData.length > 0) {",
-                  "        var u = jsonData[0];",
-                  '        pm.expect(u).to.have.property("id");',
-                  '        pm.expect(u).to.have.property("name");',
-                  '        pm.expect(u).to.have.property("email");',
-                  '        pm.expect(u).to.have.property("role");',
-                  '        pm.expect(u).to.have.property("badgeId");',
-                  "    }",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{url}}/api/users",
-              "host": ["{{url}}"],
-              "path": ["api", "users"]
-            },
-            "description": "Lists all authorized personnel, site managers, and field staff."
-          },
-          "response": [
-            {
-              "name": "List Users Example Response",
-              "originalRequest": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Accept",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{url}}/api/users",
-                  "host": ["{{url}}"],
-                  "path": ["api", "users"]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "cookie": [],
-              "body": '[\n  {\n    "id": "usr-1",\n    "name": "Sarah Jenkins",\n    "email": "sjenkins@aperture.io",\n    "role": "Site Manager",\n    "badgeId": "BDG-8801",\n    "siteAccess": ["site-01", "site-02"],\n    "avatarUrl": "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=400",\n    "phone": "+1 (555) 019-2831"\n  },\n  {\n    "id": "usr-2",\n    "name": "Marcus Vance",\n    "email": "mvance@aperture.io",\n    "role": "Yard Master",\n    "badgeId": "BDG-4019",\n    "siteAccess": ["site-01"],\n    "avatarUrl": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400",\n    "phone": "+1 (555) 014-9923"\n  }\n]'
-            }
-          ]
-        },
-        {
-          "name": "Create User",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  'pm.test("Status code is 201 Created", function () {',
-                  "    pm.response.to.have.status(201);",
-                  "});",
-                  'pm.test("User successfully registered with credentials", function () {',
-                  "    var jsonData = pm.response.json();",
-                  '    pm.expect(jsonData).to.have.property("id");',
-                  '    pm.expect(jsonData).to.have.property("name", "Elena Rostova");',
-                  '    pm.expect(jsonData).to.have.property("email", "erostova@aperture.io");',
-                  '    pm.expect(jsonData).to.have.property("role", "Site Supervisor");',
-                  '    pm.expect(jsonData).to.have.property("badgeId", "BDG-3042");',
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": '{\n  "name": "Elena Rostova",\n  "email": "erostova@aperture.io",\n  "role": "Site Supervisor",\n  "badgeId": "BDG-3042"\n}',
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{url}}/api/users",
-              "host": ["{{url}}"],
-              "path": ["api", "users"]
-            },
-            "description": "Registers a new user or site operator."
-          },
-          "response": [
-            {
-              "name": "Create User Example Response",
-              "originalRequest": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": '{\n  "name": "Elena Rostova",\n  "email": "erostova@aperture.io",\n  "role": "Site Supervisor",\n  "badgeId": "BDG-3042"\n}',
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "url": {
-                  "raw": "{{url}}/api/users",
-                  "host": ["{{url}}"],
-                  "path": ["api", "users"]
-                }
-              },
-              "status": "Created",
-              "code": 201,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "cookie": [],
-              "body": '{\n  "id": "usr-1002",\n  "name": "Elena Rostova",\n  "email": "erostova@aperture.io",\n  "role": "Site Supervisor",\n  "badgeId": "BDG-3042",\n  "siteAccess": ["site-01"],\n  "avatarUrl": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400",\n  "phone": "+1 (555) 019-2831"\n}'
-            }
-          ]
-        },
-        {
-          "name": "Update User",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  'pm.test("Status code is 200 OK", function () {',
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  'pm.test("User profile and role updated", function () {',
-                  "    var jsonData = pm.response.json();",
-                  '    pm.expect(jsonData).to.have.property("id");',
-                  '    pm.expect(jsonData).to.have.property("name");',
-                  '    pm.expect(jsonData).to.have.property("role");',
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": '{\n  "name": "Sarah Jenkins",\n  "role": "Senior Site Director"\n}',
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{url}}/api/users/:id",
-              "host": ["{{url}}"],
-              "path": ["api", "users", ":id"],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "usr-1",
-                  "description": "User Unique Identifier"
-                }
-              ]
-            },
-            "description": "Updates personnel roles, badge assignments, or site access."
-          },
-          "response": [
-            {
-              "name": "Update User Example Response",
-              "originalRequest": {
-                "method": "PUT",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": '{\n  "name": "Sarah Jenkins",\n  "role": "Senior Site Director"\n}',
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "url": {
-                  "raw": "{{url}}/api/users/:id",
-                  "host": ["{{url}}"],
-                  "path": ["api", "users", ":id"],
-                  "variable": [
-                    {
-                      "key": "id",
-                      "value": "usr-1"
-                    }
-                  ]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "cookie": [],
-              "body": '{\n  "id": "usr-1",\n  "name": "Sarah Jenkins",\n  "email": "sjenkins@aperture.io",\n  "role": "Senior Site Director",\n  "badgeId": "BDG-8801",\n  "siteAccess": ["site-01", "site-02"],\n  "avatarUrl": "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=400",\n  "phone": "+1 (555) 019-2831"\n}'
-            }
-          ]
-        },
-        {
-          "name": "Delete User",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  'pm.test("Status code is 200 OK", function () {',
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  'pm.test("Response confirms user deletion", function () {',
-                  "    var jsonData = pm.response.json();",
-                  '    pm.expect(jsonData).to.have.property("success", true);',
-                  '    pm.expect(jsonData).to.have.property("id");',
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{url}}/api/users/:id",
-              "host": ["{{url}}"],
-              "path": ["api", "users", ":id"],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "usr-1",
-                  "description": "User Unique Identifier"
-                }
-              ]
-            },
-            "description": "Deletes a user account."
-          },
-          "response": [
-            {
-              "name": "Delete User Example Response",
-              "originalRequest": {
-                "method": "DELETE",
-                "header": [
-                  {
-                    "key": "Accept",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{url}}/api/users/:id",
-                  "host": ["{{url}}"],
-                  "path": ["api", "users", ":id"],
-                  "variable": [
-                    {
-                      "key": "id",
-                      "value": "usr-1"
-                    }
-                  ]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "cookie": [],
-              "body": '{\n  "success": true,\n  "id": "usr-1"\n}'
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "System",
-      "description": "Health checks, executive metrics summary, hardware streaming controls, and API endpoint audit telemetry.",
-      "item": [
-        {
-          "name": "Get System Health",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  'pm.test("Status code is 200", function () {',
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  'pm.test("System health report is online", function () {',
-                  "    var jsonData = pm.response.json();",
-                  '    pm.expect(jsonData).to.have.property("status", "ok");',
-                  '    pm.expect(jsonData).to.have.property("service");',
-                  '    pm.expect(jsonData).to.have.property("mongoConnected");',
-                  '    pm.expect(jsonData).to.have.property("uptime");',
-                  '    pm.expect(jsonData).to.have.property("timestamp");',
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{url}}/api/health",
-              "host": ["{{url}}"],
-              "path": ["api", "health"]
-            },
-            "description": "Checks system engine and database connectivity health."
-          },
-          "response": [
-            {
-              "name": "System Health Example Response",
-              "originalRequest": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Accept",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{url}}/api/health",
-                  "host": ["{{url}}"],
-                  "path": ["api", "health"]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "cookie": [],
-              "body": '{\n  "status": "ok",\n  "service": "Aperture RFID Asset Tracking Engine",\n  "database": "MongoDB Atlas (aperture_asset_db)",\n  "mongoConnected": true,\n  "uptime": 14205.84,\n  "timestamp": "{{$isoTimestamp}}"\n}'
-            }
-          ]
-        },
-        {
-          "name": "Get Reports Summary",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  'pm.test("Status code is 200", function () {',
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  'pm.test("Executive summary has complete fleet analytics", function () {',
-                  "    var jsonData = pm.response.json();",
-                  '    pm.expect(jsonData).to.have.property("totalAssetValue");',
-                  '    pm.expect(jsonData).to.have.property("totalAssets");',
-                  '    pm.expect(jsonData).to.have.property("checkedOutCount");',
-                  '    pm.expect(jsonData).to.have.property("inZoneCount");',
-                  '    pm.expect(jsonData).to.have.property("missingCount");',
-                  '    pm.expect(jsonData).to.have.property("utilizationRate");',
-                  '    pm.expect(jsonData).to.have.property("criticalAlertsCount");',
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{url}}/api/reports/summary",
-              "host": ["{{url}}"],
-              "path": ["api", "reports", "summary"]
-            },
-            "description": "Calculates fleet capital valuation, active utilization percentage, and loss metrics."
-          },
-          "response": [
-            {
-              "name": "Reports Summary Example Response",
-              "originalRequest": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Accept",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{url}}/api/reports/summary",
-                  "host": ["{{url}}"],
-                  "path": ["api", "reports", "summary"]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "cookie": [],
-              "body": '{\n  "totalAssetValue": 482500,\n  "totalAssets": 24,\n  "checkedOutCount": 6,\n  "inZoneCount": 16,\n  "missingCount": 1,\n  "maintenanceCount": 1,\n  "utilizationRate": 72,\n  "lossPercentage": 4.2,\n  "criticalAlertsCount": 1,\n  "activeReadersCount": 8,\n  "sitesCount": 3\n}'
-            }
-          ]
-        },
-        {
-          "name": "Toggle Hardware Stream Mode",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  'pm.test("Status code is 200", function () {',
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  'pm.test("Hardware stream config updated", function () {',
-                  "    var jsonData = pm.response.json();",
-                  '    pm.expect(jsonData).to.have.property("isStreaming");',
-                  '    pm.expect(jsonData).to.have.property("offlineBufferMode");',
-                  '    pm.expect(jsonData).to.have.property("bufferedCount");',
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": '{\n  "offlineBufferMode": true\n}',
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{url}}/api/hardware/stream/toggle",
-              "host": ["{{url}}"],
-              "path": ["api", "hardware", "stream", "toggle"]
-            },
-            "description": "Toggles active tag pulse generation and offline buffer caching mode."
-          },
-          "response": [
-            {
-              "name": "Toggle Hardware Stream Example Response",
-              "originalRequest": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": '{\n  "offlineBufferMode": true\n}',
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "url": {
-                  "raw": "{{url}}/api/hardware/stream/toggle",
-                  "host": ["{{url}}"],
-                  "path": ["api", "hardware", "stream", "toggle"]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "cookie": [],
-              "body": '{\n  "isStreaming": true,\n  "eventsPerMinute": 12,\n  "offlineBufferMode": true,\n  "bufferedCount": 14\n}'
-            }
-          ]
-        },
-        {
-          "name": "Get API Endpoint Logs",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  'pm.test("Status code is 200", function () {',
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  'pm.test("Logs data contains category, module, tagCount, uniqueEpcs, and success fields", function () {',
-                  "    var jsonData = pm.response.json();",
-                  '    pm.expect(jsonData).to.have.property("success", true);',
-                  '    pm.expect(jsonData).to.have.property("data");',
-                  "    pm.expect(Array.isArray(jsonData.data)).to.be.true;",
-                  "    if (jsonData.data.length > 0) {",
-                  "        var log = jsonData.data[0];",
-                  '        pm.expect(log).to.have.property("timestamp");',
-                  '        pm.expect(log).to.have.property("method");',
-                  '        pm.expect(log).to.have.property("endpoint");',
-                  '        pm.expect(log).to.have.property("status");',
-                  '        pm.expect(log).to.have.property("category");',
-                  '        pm.expect(log).to.have.property("module");',
-                  '        pm.expect(log).to.have.property("tagCount");',
-                  '        pm.expect(log).to.have.property("uniqueEpcs");',
-                  '        pm.expect(log).to.have.property("success");',
-                  "    }",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{url}}/api/logs",
-              "host": ["{{url}}"],
-              "path": ["api", "logs"]
-            },
-            "description": "Returns structured API request logs with category, module, tagCount, uniqueEpcs, and success indicators."
-          },
-          "response": [
-            {
-              "name": "API Logs Example Response",
-              "originalRequest": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Accept",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{url}}/api/logs",
-                  "host": ["{{url}}"],
-                  "path": ["api", "logs"]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "cookie": [],
-              "body": '{\n  "success": true,\n  "data": [\n    {\n      "timestamp": "{{$isoTimestamp}}",\n      "method": "GET",\n      "endpoint": "/api/gao/getTagsInRealTime",\n      "status": 200,\n      "responseTime": 42,\n      "category": "RFID_STREAM",\n      "module": "GAO_GATEWAY",\n      "tagCount": 3,\n      "uniqueEpcs": 3,\n      "authenticated": true,\n      "requestId": "req-98a1f2",\n      "errorMessage": null,\n      "success": true\n    }\n  ]\n}'
-            }
-          ]
+          "body": '[\n  {\n    "TagID": "E28011606000020788842D31",\n    "Timestamp": "2026-06-02 20:30:18.222",\n    "Location": "Zone1"\n  },\n  {\n    "TagID": "E28011606000020788842D31",\n    "Timestamp": "2026-06-02 20:30:17.097",\n    "Location": "Zone1"\n  },\n  {\n    "TagID": "E28011606000020788842D31",\n    "Timestamp": "2026-06-02 20:30:15.925",\n    "Location": "Zone1"\n  }\n]'
         }
       ]
     }
@@ -2369,319 +338,21 @@ async function ensureDb() {
     return null;
   }
 }
-var DEFAULT_SITES = [
-  {
-    id: "SITE-001",
-    name: "Downtown Metro Tower",
-    code: "DMT-01",
-    address: "450 North Michigan Ave, Chicago, IL",
-    manager: "Sarah Jenkins",
-    activeAssetsCount: 6,
-    totalAssetsValue: 54e4,
-    coordinates: { lat: 41.8902, lng: -87.6244 },
-    zones: [
-      { id: "zone-01", siteId: "SITE-001", name: "Laydown Yard A", type: "Laydown Yard", readerIds: ["reader-101"], capacity: 25, currentCount: 3, color: "#3b82f6" },
-      { id: "zone-02", siteId: "SITE-001", name: "East Loading Dock", type: "Entry Gate", readerIds: ["reader-102"], capacity: 15, currentCount: 2, color: "#10b981" },
-      { id: "zone-03", siteId: "SITE-001", name: "Secure Tool Crib B", type: "Storage Crib", readerIds: ["reader-103"], capacity: 40, currentCount: 1, color: "#8b5cf6" }
-    ]
-  },
-  {
-    id: "SITE-002",
-    name: "Riverside Commercial Complex",
-    code: "RCC-02",
-    address: "1200 River Road, Austin, TX",
-    manager: "Michael Chang",
-    activeAssetsCount: 4,
-    totalAssetsValue: 32e4,
-    coordinates: { lat: 30.2672, lng: -97.7431 },
-    zones: [
-      { id: "zone-04", siteId: "SITE-002", name: "Main Staging Yard", type: "Laydown Yard", readerIds: ["reader-104"], capacity: 30, currentCount: 3, color: "#f59e0b" },
-      { id: "zone-05", siteId: "SITE-002", name: "High-Value Vault", type: "Storage Crib", readerIds: ["reader-105"], capacity: 10, currentCount: 1, color: "#ef4444" }
-    ]
-  }
-];
-var DEFAULT_READERS = [
-  {
-    id: "reader-101",
-    name: "Gate Portal Reader #1 (LLRP-01)",
-    type: "Fixed Portal",
-    siteId: "SITE-001",
-    siteName: "Downtown Metro Tower",
-    zoneId: "zone-01",
-    zoneName: "Laydown Yard A",
-    status: "Online",
-    lastHeartbeat: (/* @__PURE__ */ new Date()).toISOString(),
-    antennaPowerDbm: 30,
-    ipAddress: "192.168.1.101",
-    readCountTotal: 4892,
-    bufferedEventsCount: 0,
-    firmwareVersion: "v4.2.0-GAO"
-  },
-  {
-    id: "reader-102",
-    name: "East Dock Overhead Array #2",
-    type: "Fixed Portal",
-    siteId: "SITE-001",
-    siteName: "Downtown Metro Tower",
-    zoneId: "zone-02",
-    zoneName: "East Loading Dock",
-    status: "Online",
-    lastHeartbeat: (/* @__PURE__ */ new Date()).toISOString(),
-    antennaPowerDbm: 28,
-    ipAddress: "192.168.1.102",
-    readCountTotal: 3120,
-    bufferedEventsCount: 0,
-    firmwareVersion: "v4.2.0-GAO"
-  },
-  {
-    id: "reader-103",
-    name: "Tool Crib Access Portal #3",
-    type: "Fixed Portal",
-    siteId: "SITE-001",
-    siteName: "Downtown Metro Tower",
-    zoneId: "zone-03",
-    zoneName: "Secure Tool Crib B",
-    status: "Online",
-    lastHeartbeat: (/* @__PURE__ */ new Date()).toISOString(),
-    antennaPowerDbm: 24,
-    ipAddress: "192.168.1.103",
-    readCountTotal: 1840,
-    bufferedEventsCount: 0,
-    firmwareVersion: "v4.2.0-GAO"
-  },
-  {
-    id: "reader-104",
-    name: "Field Rugged Handheld Zebra TC57",
-    type: "Handheld",
-    siteId: "SITE-002",
-    siteName: "Riverside Commercial Complex",
-    zoneId: "zone-04",
-    zoneName: "Main Staging Yard",
-    status: "Online",
-    lastHeartbeat: (/* @__PURE__ */ new Date()).toISOString(),
-    antennaPowerDbm: 27,
-    ipAddress: "192.168.2.14",
-    readCountTotal: 960,
-    bufferedEventsCount: 0,
-    firmwareVersion: "v4.2.0-GAO"
-  }
-];
-var DEFAULT_ASSETS = [
-  {
-    id: "ast-1001",
-    name: "DeWalt 20V MAX Impact Driver Kit",
-    category: "Tools",
-    subCategory: "Fastening",
-    manufacturer: "DeWalt",
-    model: "DCF887M2",
-    serialNumber: "SN-DW-884912",
-    tagEpc: "E2801191A000001000000456",
-    status: "In Zone",
-    siteId: "SITE-001",
-    siteName: "Downtown Metro Tower",
-    zoneId: "zone-01",
-    zoneName: "Laydown Yard A",
-    purchaseDate: "2024-03-15",
-    cost: 349,
-    isRental: false,
-    lastSeenAt: (/* @__PURE__ */ new Date()).toISOString(),
-    lastReaderId: "reader-101",
-    rssi: -48,
-    photoUrl: "https://images.unsplash.com/photo-1504148455328-c376907d081c?auto=format&fit=crop&q=80&w=800",
-    condition: "Good"
-  },
-  {
-    id: "ast-1002",
-    name: "Caterpillar 320D Hydraulic Excavator",
-    category: "Heavy Equipment",
-    subCategory: "Earthmoving",
-    manufacturer: "Caterpillar",
-    model: "320D L",
-    serialNumber: "SN-CAT-320D-9981",
-    tagEpc: "E2801191A000001000000457",
-    status: "In Zone",
-    siteId: "SITE-001",
-    siteName: "Downtown Metro Tower",
-    zoneId: "zone-02",
-    zoneName: "East Loading Dock",
-    purchaseDate: "2023-08-10",
-    cost: 215e3,
-    isRental: true,
-    rentalCostPerDay: 850,
-    lastSeenAt: (/* @__PURE__ */ new Date()).toISOString(),
-    lastReaderId: "reader-102",
-    rssi: -44,
-    photoUrl: "https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&q=80&w=800",
-    condition: "Good"
-  },
-  {
-    id: "ast-1003",
-    name: "Trimble SX12 Scanning Total Station",
-    category: "Tools",
-    subCategory: "High Precision LiDAR",
-    manufacturer: "Trimble",
-    model: "SX12",
-    serialNumber: "SN-TRM-SX12-4410",
-    tagEpc: "E2801191A000001000000458",
-    status: "In Zone",
-    siteId: "SITE-001",
-    siteName: "Downtown Metro Tower",
-    zoneId: "zone-03",
-    zoneName: "Secure Tool Crib B",
-    purchaseDate: "2024-01-20",
-    cost: 48e3,
-    isRental: false,
-    lastSeenAt: (/* @__PURE__ */ new Date()).toISOString(),
-    lastReaderId: "reader-103",
-    rssi: -52,
-    photoUrl: "https://images.unsplash.com/photo-1581092335397-9583fe92d232?auto=format&fit=crop&q=80&w=800",
-    condition: "Excellent"
-  },
-  {
-    id: "ast-1004",
-    name: "Generac 100kVA Mobile Diesel Generator",
-    category: "Heavy Equipment",
-    subCategory: "Generators",
-    manufacturer: "Generac",
-    model: "MDG100",
-    serialNumber: "SN-GEN-MDG100-22",
-    tagEpc: "E2801191A000001000000459",
-    status: "In Zone",
-    siteId: "SITE-001",
-    siteName: "Downtown Metro Tower",
-    zoneId: "zone-01",
-    zoneName: "Laydown Yard A",
-    purchaseDate: "2023-11-05",
-    cost: 38500,
-    isRental: false,
-    lastSeenAt: (/* @__PURE__ */ new Date()).toISOString(),
-    lastReaderId: "reader-101",
-    rssi: -50,
-    photoUrl: "https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&q=80&w=800",
-    condition: "Good"
-  },
-  {
-    id: "ast-1005",
-    name: "Hilti TE 70-ATC SDS-Max Rotary Hammer",
-    category: "Tools",
-    subCategory: "Demolition & Drilling",
-    manufacturer: "Hilti",
-    model: "TE 70-ATC",
-    serialNumber: "SN-HLT-TE70-7719",
-    tagEpc: "E2801191A000001000000460",
-    status: "In Zone",
-    siteId: "SITE-001",
-    siteName: "Downtown Metro Tower",
-    zoneId: "zone-01",
-    zoneName: "Laydown Yard A",
-    purchaseDate: "2024-05-12",
-    cost: 1850,
-    isRental: false,
-    lastSeenAt: (/* @__PURE__ */ new Date()).toISOString(),
-    lastReaderId: "reader-101",
-    rssi: -46,
-    photoUrl: "https://images.unsplash.com/photo-1504148455328-c376907d081c?auto=format&fit=crop&q=80&w=800",
-    condition: "Good"
-  },
-  {
-    id: "ast-1006",
-    name: "Liebherr 280 EC-H 12 Litronic Tower Crane",
-    category: "Heavy Equipment",
-    subCategory: "Lifting & Hoisting",
-    manufacturer: "Liebherr",
-    model: "280 EC-H 12",
-    serialNumber: "SN-LBH-280-552",
-    tagEpc: "E2801191A000001000000461",
-    status: "In Zone",
-    siteId: "SITE-001",
-    siteName: "Downtown Metro Tower",
-    zoneId: "zone-02",
-    zoneName: "East Loading Dock",
-    purchaseDate: "2022-09-18",
-    cost: 62e4,
-    isRental: false,
-    lastSeenAt: (/* @__PURE__ */ new Date()).toISOString(),
-    lastReaderId: "reader-102",
-    rssi: -40,
-    photoUrl: "https://images.unsplash.com/photo-1541888946425-d0fbb18086f6?auto=format&fit=crop&q=80&w=800",
-    condition: "Good"
-  }
-];
-var DEFAULT_USERS = [
-  {
-    id: "usr-1",
-    name: "Sarah Jenkins",
-    email: "sarah.jenkins@aperture.build",
-    role: "Site Manager",
-    siteAccess: ["SITE-001", "SITE-002"],
-    badgeId: "BDG-9901",
-    avatarUrl: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=256",
-    phone: "+1 (555) 234-5678"
-  },
-  {
-    id: "usr-2",
-    name: "Marcus Brody",
-    email: "marcus.brody@aperture.build",
-    role: "Field Worker",
-    siteAccess: ["SITE-001"],
-    badgeId: "BDG-9902",
-    avatarUrl: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=256",
-    phone: "+1 (555) 345-6789"
-  }
-];
-var DEFAULT_INVENTORY = [
-  {
-    id: "inv-101",
-    name: "Industrial Heavy Duty UHF RFID Passive Tags (Pack of 100)",
-    category: "Supplies",
-    siteId: "SITE-001",
-    siteName: "Downtown Metro Tower",
-    quantityOnHand: 450,
-    minThreshold: 100,
-    reorderPoint: 150,
-    unit: "tags",
-    costPerUnit: 1.25
-  },
-  {
-    id: "inv-102",
-    name: "Anti-Metal Mountable On-Metal RFID Gen2 Tags",
-    category: "Supplies",
-    siteId: "SITE-001",
-    siteName: "Downtown Metro Tower",
-    quantityOnHand: 180,
-    minThreshold: 50,
-    reorderPoint: 80,
-    unit: "tags",
-    costPerUnit: 4.8
-  },
-  {
-    id: "inv-103",
-    name: "Zebra TC57 Replacement Lithium-Ion Batteries",
-    category: "Equipment",
-    siteId: "SITE-002",
-    siteName: "Riverside Commercial Complex",
-    quantityOnHand: 12,
-    minThreshold: 4,
-    reorderPoint: 6,
-    unit: "batteries",
-    costPerUnit: 85
-  }
-];
 var db = {
-  assets: [...DEFAULT_ASSETS],
-  sites: [...DEFAULT_SITES],
-  users: [...DEFAULT_USERS],
-  readers: [...DEFAULT_READERS],
+  assets: [],
+  sites: [],
+  users: [],
+  readers: [],
   checkouts: [],
   maintenance: [],
   alerts: [],
-  inventory: [...DEFAULT_INVENTORY],
+  inventory: [],
   events: [],
   auditLogs: [],
   apiEndpointLogs: [],
   streamConfig: {
-    isStreaming: true,
-    eventsPerMinute: 12,
+    isStreaming: false,
+    eventsPerMinute: 0,
     offlineBufferMode: false,
     bufferedCount: 0
   },
@@ -2691,9 +362,9 @@ var db = {
     authHeaderScheme: "Bearer Token",
     pollingIntervalSeconds: 15,
     isPollingActive: false,
-    lastVerifiedAt: (/* @__PURE__ */ new Date()).toISOString(),
-    latencyMs: 120,
-    status: "CONNECTED"
+    lastVerifiedAt: void 0,
+    latencyMs: 0,
+    status: "DISCONNECTED"
   }
 };
 var mongoInitPromise = null;
@@ -2724,32 +395,22 @@ async function initMongoDB() {
 async function syncMongoDBOnStartup() {
   const mongoDb = getDb();
   if (!mongoDb) return;
-  const defaultSeeds = {
-    assets: DEFAULT_ASSETS,
-    sites: DEFAULT_SITES,
-    users: DEFAULT_USERS,
-    readers: DEFAULT_READERS,
-    inventory: DEFAULT_INVENTORY
-  };
   const collections = ["assets", "sites", "users", "readers", "checkouts", "maintenance", "alerts", "inventory", "events", "auditLogs"];
+  const legacyMockIds = ["ast-1001", "ast-1002", "ast-1003", "ast-1004", "ast-1005", "ast-1006", "SITE-001", "SITE-002", "usr-1", "usr-2", "inv-101", "inv-102", "inv-103", "reader-101", "reader-102", "reader-103", "reader-104"];
   await Promise.all(collections.map(async (collName) => {
     try {
       const coll = mongoDb.collection(collName);
+      await coll.deleteMany({ id: { $in: legacyMockIds } }).catch(() => {
+      });
       const docs = await coll.find({}).toArray();
-      if (docs.length > 0) {
-        const cleaned = docs.map((doc) => {
-          const { _id, ...rest } = doc;
-          return { id: doc.id || (_id ? String(_id) : void 0), ...rest };
-        });
-        db[collName] = cleaned;
-        console.log(`[MongoDB Atlas] Loaded ${cleaned.length} documents from collection '${collName}'.`);
-      } else if (defaultSeeds[collName] && defaultSeeds[collName].length > 0) {
-        const seedDocs = defaultSeeds[collName].map((item) => ({ ...item, _id: item.id }));
-        await coll.insertMany(seedDocs);
-        console.log(`[MongoDB Atlas] Initialized collection '${collName}' with ${seedDocs.length} seed documents.`);
-      }
+      const cleaned = docs.map((doc) => {
+        const { _id, ...rest } = doc;
+        return { id: doc.id || (_id ? String(_id) : void 0), ...rest };
+      });
+      db[collName] = cleaned;
+      console.log(`[Database] Loaded ${cleaned.length} documents from collection '${collName}'.`);
     } catch (e) {
-      console.warn(`[MongoDB Atlas] Error syncing collection '${collName}':`, e.message);
+      console.warn(`[Database] Error syncing collection '${collName}':`, e.message);
     }
   }));
   try {
@@ -2971,6 +632,282 @@ app.use(async (req, res, next) => {
   }
   next();
 });
+var GAO_UPSTREAM_BASE = (process.env.GAO_API_BASE_URL || "https://www.i360services.com/peopletrackinguhf").replace(/\/$/, "");
+async function executeGaoUpstreamRequest(endpointPath) {
+  const targetUrl = `${GAO_UPSTREAM_BASE}${endpointPath}`;
+  const startTime = Date.now();
+  console.log(`[GAO Backend Proxy] -> Dispatching server-to-server request: ${targetUrl}`);
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15e3);
+    const upstreamRes = await fetch(targetUrl, {
+      method: "GET",
+      headers: {
+        "Accept": "application/json, text/plain, */*",
+        "User-Agent": "Aperture-RFID-Backend/1.0"
+      },
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    const durationMs = Date.now() - startTime;
+    const statusCode = upstreamRes.status;
+    const contentType = upstreamRes.headers.get("content-type") || "";
+    const rawBody = await upstreamRes.text();
+    const responseHeaders = {};
+    upstreamRes.headers.forEach((val, key) => {
+      responseHeaders[key] = val;
+    });
+    let isValidJson = false;
+    let parsedBody = null;
+    try {
+      parsedBody = JSON.parse(rawBody);
+      isValidJson = true;
+    } catch {
+      isValidJson = false;
+      parsedBody = null;
+    }
+    console.log(`[GAO Backend Proxy] <- Status: ${statusCode}, ContentType: "${contentType}", ValidJSON: ${isValidJson}, Time: ${durationMs}ms`);
+    return {
+      endpoint: endpointPath,
+      targetUrl,
+      statusCode,
+      statusText: upstreamRes.statusText || (upstreamRes.ok ? "OK" : "Error"),
+      contentType,
+      responseHeaders,
+      durationMs,
+      isValidJson,
+      rawBody,
+      parsedBody,
+      timeout: false
+    };
+  } catch (err) {
+    const durationMs = Date.now() - startTime;
+    const isTimeout = err?.name === "AbortError" || err?.message?.includes("timeout") || err?.message?.includes("aborted");
+    console.error(`[GAO Backend Proxy] !- Failed connecting to ${targetUrl} after ${durationMs}ms:`, err?.message || err);
+    return {
+      endpoint: endpointPath,
+      targetUrl,
+      statusCode: isTimeout ? 504 : 502,
+      statusText: isTimeout ? "Gateway Timeout" : "Bad Gateway",
+      contentType: "application/json",
+      responseHeaders: {},
+      durationMs,
+      isValidJson: false,
+      rawBody: "",
+      parsedBody: null,
+      error: isTimeout ? "Connection timed out after 15 seconds" : err?.message || "Server-to-server connection error",
+      timeout: isTimeout
+    };
+  }
+}
+app.get(["/api/GetHistoryTotalCount", "/api/v1/GetHistoryTotalCount"], async (req, res) => {
+  const result = await executeGaoUpstreamRequest("/api/GetHistoryTotalCount");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("X-GAO-Status", String(result.statusCode));
+  res.setHeader("X-GAO-Content-Type", result.contentType);
+  res.setHeader("X-GAO-Is-Valid-Json", String(result.isValidJson));
+  res.setHeader("X-GAO-Duration-Ms", String(result.durationMs));
+  if (result.responseHeaders["server"]) {
+    res.setHeader("X-GAO-Upstream-Server", result.responseHeaders["server"]);
+  }
+  if (req.query.debug === "true") {
+    return res.status(result.statusCode).json(result);
+  }
+  if (result.error) {
+    return res.status(result.statusCode).json({ error: result.error, targetUrl: result.targetUrl, durationMs: result.durationMs });
+  }
+  res.status(result.statusCode);
+  res.setHeader("Content-Type", result.contentType || (result.isValidJson ? "application/json" : "text/plain"));
+  return res.send(result.rawBody);
+});
+app.get(["/api/GetHistoryRecords/:skipCount/:takeCount", "/api/v1/GetHistoryRecords/:skipCount/:takeCount", "/api/GetHistoryRecords"], async (req, res) => {
+  const rawSkip = parseInt(String(req.params.skipCount || req.query.skip || "0"), 10);
+  const rawTake = parseInt(String(req.params.takeCount || req.query.take || "30"), 10);
+  const skipCount = isNaN(rawSkip) ? 0 : Math.max(0, rawSkip);
+  const takeCount = isNaN(rawTake) ? 30 : Math.min(Math.max(1, rawTake), 200);
+  const endpoint = `/api/GetHistoryRecords/${skipCount}/${takeCount}`;
+  const result = await executeGaoUpstreamRequest(endpoint);
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("X-GAO-Status", String(result.statusCode));
+  res.setHeader("X-GAO-Content-Type", result.contentType);
+  res.setHeader("X-GAO-Is-Valid-Json", String(result.isValidJson));
+  res.setHeader("X-GAO-Duration-Ms", String(result.durationMs));
+  if (result.responseHeaders["server"]) {
+    res.setHeader("X-GAO-Upstream-Server", result.responseHeaders["server"]);
+  }
+  if (req.query.debug === "true") {
+    return res.status(result.statusCode).json(result);
+  }
+  if (result.error) {
+    return res.status(result.statusCode).json({ error: result.error, targetUrl: result.targetUrl, durationMs: result.durationMs });
+  }
+  res.status(result.statusCode);
+  res.setHeader("Content-Type", result.contentType || (result.isValidJson ? "application/json" : "text/plain"));
+  return res.send(result.rawBody);
+});
+app.get(["/api/GetTagsInRealtime", "/api/v1/GetTagsInRealtime"], async (req, res) => {
+  const result = await executeGaoUpstreamRequest("/api/GetTagsInRealtime");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("X-GAO-Status", String(result.statusCode));
+  res.setHeader("X-GAO-Content-Type", result.contentType);
+  res.setHeader("X-GAO-Is-Valid-Json", String(result.isValidJson));
+  res.setHeader("X-GAO-Duration-Ms", String(result.durationMs));
+  if (result.responseHeaders["server"]) {
+    res.setHeader("X-GAO-Upstream-Server", result.responseHeaders["server"]);
+  }
+  if (req.query.debug === "true") {
+    return res.status(result.statusCode).json(result);
+  }
+  if (result.error) {
+    return res.status(result.statusCode).json({ error: result.error, targetUrl: result.targetUrl, durationMs: result.durationMs });
+  }
+  res.status(result.statusCode);
+  res.setHeader("Content-Type", result.contentType || (result.isValidJson ? "application/json" : "text/plain"));
+  return res.send(result.rawBody);
+});
+app.all(["/api/gateway/proxy", "/api/v1/gateway/proxy"], async (req, res) => {
+  const targetUrl = (req.query.url || req.body?.url)?.trim();
+  if (!targetUrl) {
+    return res.status(400).json({
+      error: "MISSING_TARGET_URL",
+      message: 'Please provide a target endpoint URL via "url" parameter.'
+    });
+  }
+  const startTime = Date.now();
+  try {
+    const method = (req.body?.method || req.query?.method || (req.method === "GET" ? "GET" : "GET")).toUpperCase();
+    const authHeaderName = req.headers["x-target-auth-header"] || req.body?.authHeaderName || "X-API-Key";
+    const authHeaderValue = req.headers["x-target-api-key"] || req.body?.apiKey || "";
+    const headers = {
+      "Accept": "application/json, text/plain, */*",
+      "User-Agent": "Aperture-RFID-Backend/1.0"
+    };
+    if (authHeaderValue && authHeaderValue.trim()) {
+      headers[authHeaderName] = authHeaderName.toLowerCase() === "authorization" && !authHeaderValue.startsWith("Bearer ") ? `Bearer ${authHeaderValue}` : authHeaderValue;
+    }
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12e3);
+    const upstreamRes = await fetch(targetUrl, {
+      method: method === "OPTIONS" ? "GET" : method,
+      headers,
+      body: ["POST", "PUT", "PATCH"].includes(method) && req.body?.payload ? JSON.stringify(req.body.payload) : void 0,
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    const durationMs = Date.now() - startTime;
+    const contentType = upstreamRes.headers.get("content-type") || "application/json";
+    const rawText = await upstreamRes.text();
+    let finalRes = upstreamRes;
+    let finalRawText = rawText;
+    let finalTargetUrl = targetUrl;
+    if (upstreamRes.status === 404 && targetUrl.includes("i360services.com/peopletrackinguhf")) {
+      let candidateUrl = null;
+      if (targetUrl.toLowerCase().includes("realtime") || targetUrl.toLowerCase().includes("tag")) {
+        candidateUrl = "https://www.i360services.com/peopletrackinguhf/api/GetTagsInRealtime";
+      } else if (targetUrl.toLowerCase().includes("history") || targetUrl.toLowerCase().includes("date") || targetUrl.toLowerCase().includes("asset")) {
+        candidateUrl = "https://www.i360services.com/peopletrackinguhf/api/GetHistoryRecords/0/30";
+      }
+      if (candidateUrl && candidateUrl !== targetUrl) {
+        try {
+          const retryRes = await fetch(candidateUrl, {
+            method: "GET",
+            headers,
+            signal: controller.signal
+          });
+          if (retryRes.ok) {
+            finalRes = retryRes;
+            finalRawText = await retryRes.text();
+            finalTargetUrl = candidateUrl;
+          }
+        } catch {
+        }
+      }
+    }
+    let parsed = null;
+    let isValidJson = false;
+    try {
+      parsed = JSON.parse(finalRawText);
+      isValidJson = true;
+    } catch {
+      parsed = finalRawText;
+      isValidJson = false;
+    }
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    return res.status(finalRes.status).json({
+      ok: finalRes.ok,
+      status: finalRes.status,
+      statusText: finalRes.statusText || (finalRes.ok ? "OK" : "Status " + finalRes.status),
+      durationMs,
+      contentType: finalRes.headers.get("content-type") || contentType,
+      isValidJson,
+      targetUrl: finalTargetUrl,
+      resolvedFrom404: finalTargetUrl !== targetUrl,
+      data: parsed
+    });
+  } catch (err) {
+    const durationMs = Date.now() - startTime;
+    return res.status(502).json({
+      ok: false,
+      status: 502,
+      statusText: "Bad Gateway",
+      durationMs,
+      targetUrl,
+      error: err?.message || "Server-to-server proxy connection failed"
+    });
+  }
+});
+app.get(["/api/gao/diagnostics", "/api/v1/gao/diagnostics"], async (req, res) => {
+  const [countResult, historyResult, realtimeResult] = await Promise.allSettled([
+    executeGaoUpstreamRequest("/api/GetHistoryTotalCount"),
+    executeGaoUpstreamRequest("/api/GetHistoryRecords/0/30"),
+    executeGaoUpstreamRequest("/api/GetTagsInRealtime")
+  ]);
+  const count = countResult.status === "fulfilled" ? countResult.value : null;
+  const history = historyResult.status === "fulfilled" ? historyResult.value : null;
+  const realtime = realtimeResult.status === "fulfilled" ? realtimeResult.value : null;
+  const allHealthy = count?.statusCode === 200 && history?.statusCode === 200 && realtime?.statusCode === 200;
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  return res.json({
+    status: allHealthy ? "HEALTHY" : "DEGRADED",
+    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+    upstreamServer: GAO_UPSTREAM_BASE,
+    allowedByGaoServer: allHealthy,
+    summary: {
+      totalCountApi: {
+        statusCode: count?.statusCode,
+        statusText: count?.statusText,
+        contentType: count?.contentType,
+        headers: count?.responseHeaders,
+        rawBody: count?.rawBody,
+        isValidJson: count?.isValidJson,
+        parsedValue: count?.parsedBody,
+        durationMs: count?.durationMs,
+        error: count?.error || null
+      },
+      historyRecordsApi: {
+        statusCode: history?.statusCode,
+        statusText: history?.statusText,
+        contentType: history?.contentType,
+        headers: history?.responseHeaders,
+        recordCount: Array.isArray(history?.parsedBody) ? history?.parsedBody.length : 0,
+        isValidJson: history?.isValidJson,
+        durationMs: history?.durationMs,
+        error: history?.error || null,
+        sampleRecord: Array.isArray(history?.parsedBody) && history?.parsedBody[0] ? history?.parsedBody[0] : null
+      },
+      realtimeTagsApi: {
+        statusCode: realtime?.statusCode,
+        statusText: realtime?.statusText,
+        contentType: realtime?.contentType,
+        headers: realtime?.responseHeaders,
+        tagCount: Array.isArray(realtime?.parsedBody) ? realtime?.parsedBody.length : 0,
+        isValidJson: realtime?.isValidJson,
+        durationMs: realtime?.durationMs,
+        error: realtime?.error || null
+      }
+    }
+  });
+});
 app.get(["/api", "/api/"], (req, res) => {
   const mongoDb = getDb();
   const connected = isMongoConnected();
@@ -2992,17 +929,43 @@ app.get(["/api", "/api/"], (req, res) => {
     timestamp: (/* @__PURE__ */ new Date()).toISOString()
   });
 });
-app.get(["/api/health", "/api/v1/health"], (req, res) => {
-  const mongoDb = getDb();
-  const connected = isMongoConnected();
-  res.json({
-    status: "ok",
-    service: "Aperture RFID Asset Tracking Engine",
-    database: connected ? `MongoDB Atlas (${mongoDb?.databaseName})` : "MongoDB (In-Memory/JSON Document Store)",
-    mongoConnected: connected,
-    uptime: process.uptime(),
-    timestamp: (/* @__PURE__ */ new Date()).toISOString()
-  });
+app.get(["/api/health", "/api/v1/health"], async (req, res) => {
+  try {
+    console.log("[API /api/health] Performing diagnostic checks...");
+    const mongoDb = await ensureDb();
+    let isDbHealthy = false;
+    if (mongoDb && isMongoConnected()) {
+      try {
+        await mongoDb.command({ ping: 1 });
+        isDbHealthy = true;
+      } catch (pingErr) {
+        console.error("[API /api/health] MongoDB ping failed:", pingErr);
+      }
+    }
+    if (isDbHealthy) {
+      return res.status(200).json({
+        success: true,
+        api: "ok",
+        database: "connected",
+        timestamp: (/* @__PURE__ */ new Date()).toISOString()
+      });
+    } else {
+      return res.status(503).json({
+        success: false,
+        api: "ok",
+        database: "disconnected",
+        timestamp: (/* @__PURE__ */ new Date()).toISOString()
+      });
+    }
+  } catch (err) {
+    console.error("[API /api/health] Handler crash:", err);
+    return res.status(500).json({
+      success: false,
+      api: "error",
+      database: "disconnected",
+      details: err?.message || String(err)
+    });
+  }
 });
 app.all(["/api/db", "/api/v1/db"], (req, res) => {
   setNoCacheHeaders(res);
@@ -3212,8 +1175,8 @@ app.post(["/api/assets", "/api/v1/assets", "/assets"], async (req, res) => {
       status: body.status || "In Zone",
       siteId: body.siteId || db.sites[0]?.id || "site-01",
       siteName: db.sites.find((s) => s.id === body.siteId)?.name || db.sites[0]?.name || "Downtown Metro Tower",
-      zoneId: body.zoneId || db.sites[0]?.zones[0]?.id || "z-01",
-      zoneName: db.sites[0]?.zones?.find((z) => z.id === body.zoneId)?.name || db.sites[0]?.zones[0]?.name || "Laydown Yard A",
+      zoneId: body.zoneId || db.sites[0]?.zones?.[0]?.id || "z-01",
+      zoneName: db.sites[0]?.zones?.find((z) => z.id === body.zoneId)?.name || db.sites[0]?.zones?.[0]?.name || "Laydown Yard A",
       purchaseDate: body.purchaseDate || (/* @__PURE__ */ new Date()).toISOString().split("T")[0],
       cost: Number(body.cost) || 500,
       rentalCostPerDay: body.isRental ? Number(body.rentalCostPerDay) || 50 : 0,
@@ -3392,149 +1355,341 @@ app.delete(["/api/assets/:id", "/api/v1/assets/:id", "/assets/:id"], async (req,
 });
 app.get(["/api/checkouts", "/api/v1/checkouts"], async (req, res) => {
   setNoCacheHeaders(res);
-  const mongoDb = await ensureDb();
-  if (mongoDb && isMongoConnected()) {
-    try {
-      const docs = await mongoDb.collection("checkouts").find({}).toArray();
-      if (docs.length > 0) {
-        db.checkouts = docs.map((doc) => {
-          const { _id, ...rest } = doc;
-          return { id: doc.id || (_id ? String(_id) : void 0), ...rest };
-        });
+  try {
+    console.log("[API /api/checkouts] GET checkouts list requested");
+    const mongoDb = await ensureDb();
+    let checkoutsList = [];
+    if (mongoDb && isMongoConnected()) {
+      try {
+        const docs = await mongoDb.collection("checkouts").find({}).toArray();
+        checkoutsList = docs.map((doc) => cleanMongoDoc(doc));
+        if (checkoutsList.length > 0) {
+          db.checkouts = checkoutsList;
+        }
+      } catch (mongoErr) {
+        console.error("[API /api/checkouts] MongoDB query error:", mongoErr?.message || mongoErr);
+        checkoutsList = db.checkouts || [];
       }
-    } catch (e) {
-      console.warn("[GET /api/checkouts] Mongo query error:", e);
+    } else {
+      checkoutsList = db.checkouts || [];
     }
+    return res.status(200).json(checkoutsList);
+  } catch (err) {
+    console.error("[API /api/checkouts] GET handler crash:", err);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to process checkout request",
+      details: err?.message || String(err)
+    });
   }
-  res.json(db.checkouts);
 });
 app.post(["/api/checkouts", "/api/v1/checkouts"], async (req, res) => {
-  const { assetId, userId, jobId, expectedReturnHours, notes, photoUrl } = req.body;
-  const asset = db.assets.find((a) => a.id === assetId);
-  const user = db.users.find((u) => u.id === userId);
-  if (!asset) return res.status(400).json({ error: "Asset invalid" });
-  const expectedHours = Number(expectedReturnHours) || 8;
-  const newCheckout = {
-    id: `chk-${Date.now()}`,
-    assetId: asset.id,
-    assetName: asset.name,
-    assetCategory: asset.category,
-    tagEpc: asset.tagEpc,
-    userId: user?.id || "usr-3",
-    userName: user?.name || "Carlos Mendez",
-    badgeId: user?.badgeId || "BDG-1029",
-    checkoutTime: (/* @__PURE__ */ new Date()).toISOString(),
-    expectedReturn: new Date(Date.now() + 1e3 * 60 * 60 * expectedHours).toISOString(),
-    jobId: jobId || "job-general",
-    jobName: jobId ? `Job #${jobId}` : "General Site Work",
-    checkoutCondition: asset.condition,
-    notes: notes || "Handheld scanner checkout",
-    photoUrl,
-    status: "ACTIVE"
-  };
-  asset.status = "Checked Out";
-  asset.custodianId = newCheckout.userId;
-  asset.custodianName = newCheckout.userName;
-  const mongoDb = await ensureDb();
-  if (mongoDb && isMongoConnected()) {
-    try {
-      await mongoDb.collection("checkouts").insertOne({ ...newCheckout, _id: newCheckout.id });
-      await mongoDb.collection("assets").updateOne({ id: asset.id }, { $set: { status: "Checked Out", custodianId: newCheckout.userId, custodianName: newCheckout.userName } });
-    } catch (err) {
-      console.warn("[MongoDB Checkout Error]", err);
+  try {
+    console.log("[API /api/checkouts] POST checkout request received:", req.body);
+    const body = req.body || {};
+    const assetId = body.assetId || body.asset_id || body.id;
+    const userId = body.userId || body.user_id || "usr-3";
+    const jobId = body.jobId || body.job_id || "job-general";
+    const expectedReturnHours = Number(body.expectedReturnHours) || 8;
+    const notes = body.notes || "Handheld scanner checkout";
+    const photoUrl = body.photoUrl;
+    if (!assetId) {
+      return res.status(400).json({
+        success: false,
+        error: "MISSING_ASSET_ID",
+        message: "assetId is required to issue a checkout record."
+      });
     }
+    const mongoDb = await ensureDb();
+    let asset = null;
+    let user = null;
+    if (mongoDb && isMongoConnected()) {
+      try {
+        const assetDoc = await mongoDb.collection("assets").findOne({
+          $or: [{ id: assetId }, { _id: assetId }, { tagEpc: assetId }]
+        });
+        if (assetDoc) {
+          asset = cleanMongoDoc(assetDoc);
+        }
+      } catch (err) {
+        console.warn("[API /api/checkouts] Mongo asset lookup failed:", err);
+      }
+    }
+    if (!asset) {
+      asset = db.assets.find((a) => a.id === assetId || a.tagEpc === assetId) || null;
+    }
+    if (!asset) {
+      return res.status(400).json({
+        success: false,
+        error: "ASSET_NOT_FOUND",
+        message: `Asset with ID or EPC '${assetId}' was not found.`
+      });
+    }
+    if (mongoDb && isMongoConnected()) {
+      try {
+        const userDoc = await mongoDb.collection("users").findOne({
+          $or: [{ id: userId }, { _id: userId }, { badgeId: userId }]
+        });
+        if (userDoc) {
+          user = cleanMongoDoc(userDoc);
+        }
+      } catch (err) {
+        console.warn("[API /api/checkouts] Mongo user lookup failed:", err);
+      }
+    }
+    if (!user) {
+      user = db.users.find((u) => u.id === userId || u.badgeId === userId) || null;
+    }
+    const checkoutId = `chk-${Date.now()}`;
+    const userName = user?.name || body.userName || "Carlos Mendez";
+    const userBadgeId = user?.badgeId || body.badgeId || "BDG-1029";
+    const newCheckout = {
+      id: checkoutId,
+      assetId: asset.id,
+      assetName: asset.name,
+      assetCategory: asset.category || "Tools",
+      tagEpc: asset.tagEpc || "",
+      userId: user?.id || userId,
+      userName,
+      badgeId: userBadgeId,
+      checkoutTime: (/* @__PURE__ */ new Date()).toISOString(),
+      expectedReturn: new Date(Date.now() + 1e3 * 60 * 60 * expectedReturnHours).toISOString(),
+      jobId,
+      jobName: jobId ? `Job #${jobId}` : "General Site Work",
+      checkoutCondition: asset.condition || "Good",
+      notes,
+      photoUrl,
+      status: "ACTIVE"
+    };
+    asset.status = "Checked Out";
+    asset.custodianId = newCheckout.userId;
+    asset.custodianName = newCheckout.userName;
+    const assetIdx = db.assets.findIndex((a) => a.id === asset.id);
+    if (assetIdx !== -1) {
+      db.assets[assetIdx] = { ...db.assets[assetIdx], status: "Checked Out", custodianId: newCheckout.userId, custodianName: newCheckout.userName };
+    }
+    db.checkouts.unshift(newCheckout);
+    if (mongoDb && isMongoConnected()) {
+      try {
+        await mongoDb.collection("checkouts").insertOne({ ...newCheckout, _id: newCheckout.id });
+        await mongoDb.collection("assets").updateOne(
+          { id: asset.id },
+          { $set: { status: "Checked Out", custodianId: newCheckout.userId, custodianName: newCheckout.userName } }
+        );
+        console.log(`[API /api/checkouts] Saved checkout ${newCheckout.id} to MongoDB Atlas.`);
+      } catch (mongoWriteErr) {
+        console.error("[API /api/checkouts] MongoDB write error:", mongoWriteErr);
+      }
+    }
+    try {
+      addAuditLog("CHECKOUT_ISSUED", "CHECKOUT", newCheckout.id, asset.name, newCheckout.userName, `Checked out for job ${newCheckout.jobName}`);
+      saveDb();
+    } catch (e) {
+    }
+    return res.status(201).json(newCheckout);
+  } catch (err) {
+    console.error("[API /api/checkouts] POST handler crash:", err);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to process checkout request",
+      details: err?.message || String(err)
+    });
   }
-  db.checkouts.unshift(newCheckout);
-  addAuditLog("CHECKOUT_ISSUED", "CHECKOUT", newCheckout.id, asset.name, newCheckout.userName, `Checked out for job ${newCheckout.jobName}`);
-  saveDb();
-  res.status(201).json(newCheckout);
 });
 app.post(["/api/checkouts/:id/return", "/api/v1/checkouts/:id/return"], async (req, res) => {
-  const checkout = db.checkouts.find((c) => c.id === req.params.id);
-  if (!checkout) return res.status(404).json({ error: "Checkout record not found" });
-  checkout.status = "RETURNED";
-  checkout.actualReturn = (/* @__PURE__ */ new Date()).toISOString();
-  checkout.returnCondition = req.body.condition || "Good";
-  const asset = db.assets.find((a) => a.id === checkout.assetId);
-  if (asset) {
-    asset.status = "In Zone";
-    asset.custodianId = void 0;
-    asset.custodianName = void 0;
-    if (req.body.condition) asset.condition = req.body.condition;
-  }
-  const mongoDb = await ensureDb();
-  if (mongoDb && isMongoConnected()) {
-    try {
-      await mongoDb.collection("checkouts").updateOne({ id: checkout.id }, { $set: { status: "RETURNED", actualReturn: checkout.actualReturn, returnCondition: checkout.returnCondition } });
-      if (asset) {
-        await mongoDb.collection("assets").updateOne({ id: asset.id }, { $set: { status: "In Zone", custodianId: null, custodianName: null, condition: asset.condition } });
+  try {
+    const { id } = req.params;
+    const body = req.body || {};
+    const returnCondition = body.condition || "Good";
+    console.log(`[API /api/checkouts/${id}/return] POST return requested:`, body);
+    const mongoDb = await ensureDb();
+    let checkout = null;
+    if (mongoDb && isMongoConnected()) {
+      try {
+        const doc = await mongoDb.collection("checkouts").findOne({ $or: [{ id }, { _id: id }] });
+        if (doc) {
+          checkout = cleanMongoDoc(doc);
+        }
+      } catch (err) {
+        console.warn(`[API /api/checkouts/${id}/return] Mongo lookup error:`, err);
       }
-    } catch (err) {
-      console.warn("[MongoDB Return Checkout Error]", err);
     }
+    if (!checkout) {
+      checkout = db.checkouts.find((c) => c.id === id) || null;
+    }
+    if (!checkout) {
+      return res.status(404).json({
+        success: false,
+        error: "CHECKOUT_NOT_FOUND",
+        message: `Checkout record with ID '${id}' was not found.`
+      });
+    }
+    checkout.status = "RETURNED";
+    checkout.actualReturn = (/* @__PURE__ */ new Date()).toISOString();
+    checkout.returnCondition = returnCondition;
+    let asset = null;
+    if (mongoDb && isMongoConnected()) {
+      try {
+        const assetDoc = await mongoDb.collection("assets").findOne({ $or: [{ id: checkout.assetId }, { _id: checkout.assetId }] });
+        if (assetDoc) {
+          asset = cleanMongoDoc(assetDoc);
+        }
+      } catch (e) {
+        console.warn(`[API /api/checkouts/${id}/return] Asset lookup error:`, e);
+      }
+    }
+    if (!asset) {
+      asset = db.assets.find((a) => a.id === checkout?.assetId) || null;
+    }
+    if (asset) {
+      asset.status = "In Zone";
+      asset.custodianId = void 0;
+      asset.custodianName = void 0;
+      asset.condition = returnCondition;
+      const aIdx = db.assets.findIndex((a) => a.id === asset.id);
+      if (aIdx !== -1) {
+        db.assets[aIdx] = { ...db.assets[aIdx], status: "In Zone", custodianId: void 0, custodianName: void 0, condition: returnCondition };
+      }
+    }
+    const cIdx = db.checkouts.findIndex((c) => c.id === id);
+    if (cIdx !== -1) {
+      db.checkouts[cIdx] = checkout;
+    }
+    if (mongoDb && isMongoConnected()) {
+      try {
+        await mongoDb.collection("checkouts").updateOne(
+          { $or: [{ id }, { _id: id }] },
+          { $set: { status: "RETURNED", actualReturn: checkout.actualReturn, returnCondition: checkout.returnCondition } }
+        );
+        if (checkout.assetId) {
+          await mongoDb.collection("assets").updateOne(
+            { $or: [{ id: checkout.assetId }, { _id: checkout.assetId }] },
+            { $set: { status: "In Zone", custodianId: null, custodianName: null, condition: returnCondition } }
+          );
+        }
+      } catch (err) {
+        console.error(`[API /api/checkouts/${id}/return] MongoDB update error:`, err);
+      }
+    }
+    try {
+      addAuditLog("CHECKOUT_RETURNED", "CHECKOUT", checkout.id, checkout.assetName, checkout.userName, `Returned to zone in ${checkout.returnCondition} condition`);
+      saveDb();
+    } catch (e) {
+    }
+    return res.status(200).json(checkout);
+  } catch (err) {
+    console.error(`[API /api/checkouts/${req.params.id}/return] Crash:`, err);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to process return request",
+      details: err?.message || String(err)
+    });
   }
-  addAuditLog("CHECKOUT_RETURNED", "CHECKOUT", checkout.id, checkout.assetName, checkout.userName, `Returned to zone in ${checkout.returnCondition} condition`);
-  saveDb();
-  res.json(checkout);
 });
 app.get(["/api/checkouts/:id", "/api/v1/checkouts/:id"], async (req, res) => {
   setNoCacheHeaders(res);
-  const { id } = req.params;
-  const mongoDb = await ensureDb();
-  let checkout = null;
-  if (mongoDb && isMongoConnected()) {
-    try {
-      const doc = await mongoDb.collection("checkouts").findOne({ $or: [{ id }, { _id: id }] });
-      if (doc) {
-        const { _id, ...rest } = doc;
-        checkout = { id: doc.id || String(_id), ...rest };
+  try {
+    const { id } = req.params;
+    const mongoDb = await ensureDb();
+    let checkout = null;
+    if (mongoDb && isMongoConnected()) {
+      try {
+        const doc = await mongoDb.collection("checkouts").findOne({ $or: [{ id }, { _id: id }] });
+        if (doc) {
+          checkout = cleanMongoDoc(doc);
+        }
+      } catch (e) {
+        console.warn(`[GET /api/checkouts/${id}] Mongo error:`, e);
       }
-    } catch (e) {
-      console.warn(`[GET /api/checkouts/${id}] Mongo error:`, e);
     }
+    if (!checkout) {
+      checkout = db.checkouts.find((c) => c.id === id) || null;
+    }
+    if (!checkout) {
+      return res.status(404).json({
+        success: false,
+        error: "CHECKOUT_NOT_FOUND",
+        message: `Checkout record '${id}' not found`
+      });
+    }
+    return res.status(200).json(checkout);
+  } catch (err) {
+    console.error(`[GET /api/checkouts/${req.params.id}] Crash:`, err);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to retrieve checkout record",
+      details: err?.message || String(err)
+    });
   }
-  if (!checkout) checkout = db.checkouts.find((c) => c.id === id) || null;
-  if (!checkout) return res.status(404).json({ error: "CHECKOUT_NOT_FOUND", message: `Checkout record ${id} not found` });
-  res.json(checkout);
 });
 app.patch(["/api/checkouts/:id", "/api/v1/checkouts/:id"], async (req, res) => {
-  const { id } = req.params;
-  const updateData = req.body || {};
-  const mongoDb = await ensureDb();
-  let updatedCheckout = null;
-  if (mongoDb && isMongoConnected()) {
-    try {
-      await mongoDb.collection("checkouts").updateOne({ id }, { $set: updateData });
-      const doc = await mongoDb.collection("checkouts").findOne({ id });
-      if (doc) {
-        const { _id, ...rest } = doc;
-        updatedCheckout = { id: doc.id || String(_id), ...rest };
+  try {
+    const { id } = req.params;
+    const updateData = req.body || {};
+    const mongoDb = await ensureDb();
+    let updatedCheckout = null;
+    if (mongoDb && isMongoConnected()) {
+      try {
+        await mongoDb.collection("checkouts").updateOne(
+          { $or: [{ id }, { _id: id }] },
+          { $set: updateData }
+        );
+        const doc = await mongoDb.collection("checkouts").findOne({ $or: [{ id }, { _id: id }] });
+        if (doc) {
+          updatedCheckout = cleanMongoDoc(doc);
+        }
+      } catch (e) {
+        console.warn(`[PATCH /api/checkouts/${id}] Mongo error:`, e);
       }
-    } catch (e) {
-      console.warn(`[PATCH /api/checkouts/${id}] Mongo error:`, e);
     }
+    const idx = db.checkouts.findIndex((c) => c.id === id);
+    if (idx !== -1) {
+      db.checkouts[idx] = { ...db.checkouts[idx], ...updateData };
+      if (!updatedCheckout) updatedCheckout = db.checkouts[idx];
+    }
+    if (!updatedCheckout) {
+      return res.status(404).json({
+        success: false,
+        error: "CHECKOUT_NOT_FOUND",
+        message: `Checkout record '${id}' not found`
+      });
+    }
+    return res.status(200).json(updatedCheckout);
+  } catch (err) {
+    console.error(`[PATCH /api/checkouts/${req.params.id}] Crash:`, err);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to update checkout record",
+      details: err?.message || String(err)
+    });
   }
-  const idx = db.checkouts.findIndex((c) => c.id === id);
-  if (idx !== -1) {
-    db.checkouts[idx] = { ...db.checkouts[idx], ...updateData };
-    if (!updatedCheckout) updatedCheckout = db.checkouts[idx];
-  }
-  if (!updatedCheckout) return res.status(404).json({ error: "CHECKOUT_NOT_FOUND", message: `Checkout ${id} not found` });
-  res.json(updatedCheckout);
 });
 app.delete(["/api/checkouts/:id", "/api/v1/checkouts/:id"], async (req, res) => {
-  const { id } = req.params;
-  const mongoDb = await ensureDb();
-  if (mongoDb && isMongoConnected()) {
-    try {
-      await mongoDb.collection("checkouts").deleteOne({ $or: [{ id }, { _id: id }] });
-    } catch (e) {
-      console.warn(`[DELETE /api/checkouts/${id}] Mongo error:`, e);
+  try {
+    const { id } = req.params;
+    const mongoDb = await ensureDb();
+    if (mongoDb && isMongoConnected()) {
+      try {
+        await mongoDb.collection("checkouts").deleteOne({ $or: [{ id }, { _id: id }] });
+      } catch (e) {
+        console.warn(`[DELETE /api/checkouts/${id}] Mongo error:`, e);
+      }
     }
+    const idx = db.checkouts.findIndex((c) => c.id === id);
+    if (idx !== -1) db.checkouts.splice(idx, 1);
+    return res.status(200).json({
+      success: true,
+      id,
+      message: "Checkout record deleted successfully"
+    });
+  } catch (err) {
+    console.error(`[DELETE /api/checkouts/${req.params.id}] Crash:`, err);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to delete checkout record",
+      details: err?.message || String(err)
+    });
   }
-  const idx = db.checkouts.findIndex((c) => c.id === id);
-  if (idx !== -1) db.checkouts.splice(idx, 1);
-  res.json({ success: true, id, message: "Checkout record deleted successfully" });
 });
 app.post(["/api/events/scan", "/api/v1/events/scan"], async (req, res) => {
   const { epc, readerId, rssi } = req.body;
@@ -4361,23 +2516,32 @@ app.post(["/api/ai/analyze-behavior", "/api/v1/ai/analyze-behavior"], async (req
   const recentEvents = db.events.slice(0, 30);
   const totalAssets = db.assets.length;
   const activeAlerts = db.alerts.filter((a) => !a.resolved);
+  if (totalAssets === 0 && recentEvents.length === 0) {
+    return res.json({
+      success: true,
+      hasData: false,
+      message: "Insufficient operational data for analysis.",
+      eventsAnalyzedCount: 0,
+      analysis: null
+    });
+  }
   let aiAnalysis = null;
   const ai = getAiClient();
-  if (ai) {
+  if (ai && (totalAssets > 0 || recentEvents.length > 0)) {
     try {
       const prompt = `You are the AI Event Behavioral Security Engine for Aperture Construction Asset Tracking System.
-Analyze the following recent RFID tag read events and site metrics:
-- Total Assets Tracked: ${totalAssets}
-- Active Alerts: ${activeAlerts.length} (${activeAlerts.map((a) => a.type).join(", ")})
-- Recent Events Sample:
+Analyze the following real operational RFID/GPS asset tracking records and site metrics from the database:
+- Total Real Assets Tracked: ${totalAssets}
+- Real Active Alerts: ${activeAlerts.length} (${activeAlerts.map((a) => a.type).join(", ")})
+- Real Events Sample:
 ${recentEvents.slice(0, 10).map((e) => `[${e.timestamp}] Asset: "${e.assetName}" (${e.epc}), Reader: "${e.readerName}" in Zone: "${e.zoneName}", RSSI: ${e.rssi}dBm`).join("\n")}
 
 Task: Provide a JSON object with:
 1. "riskScore": integer between 0 and 100 representing overall behavioral anomaly threat score
 2. "riskLevel": string ("LOW" | "MEDIUM" | "HIGH" | "CRITICAL")
-3. "anomaliesDetected": array of strings listing detected behavioral anomalies
-4. "topFlaggedAssets": array of string names of assets showing suspicious movement
-5. "executiveSummary": string explaining behavioral patterns and recommended security actions.
+3. "anomaliesDetected": array of strings listing detected behavioral anomalies (based ONLY on the real data provided)
+4. "topFlaggedAssets": array of string names of real assets showing suspicious movement
+5. "executiveSummary": string explaining real behavioral patterns and recommended operational actions.
 Return ONLY valid JSON.`;
       const response = await ai.models.generateContent({
         model: "gemini-3.7-flash",
@@ -4387,31 +2551,29 @@ Return ONLY valid JSON.`;
       const cleanedJson = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
       aiAnalysis = JSON.parse(cleanedJson);
     } catch (e) {
-      if (e?.message?.includes("resource_exhausted") || e?.message?.includes("quota") || e?.status === 429) {
-        console.warn("Gemini API Quota Exceeded / Rate Limited (falling back to local secure heuristic engine).");
-      } else {
-        console.warn("Gemini behavior analysis fallback due to error:", e);
-      }
+      console.warn("[Gemini AI Behavior Engine Error]", e?.message);
     }
   }
   if (!aiAnalysis) {
+    if (totalAssets === 0 && recentEvents.length === 0) {
+      return res.json({
+        success: true,
+        hasData: false,
+        message: "Insufficient operational data for analysis.",
+        analysis: null
+      });
+    }
     aiAnalysis = {
-      riskScore: activeAlerts.length > 0 ? 68 : 18,
-      riskLevel: activeAlerts.length > 0 ? "HIGH" : "LOW",
-      anomaliesDetected: [
-        "High RSSI fluctuation at Gate Reader #1 (-38 dBm to -72 dBm)",
-        "Multiple power tool scans during non-shift window (02:14 AM)",
-        "Laydown Yard asset dwell time exceeding 14-day threshold"
-      ],
-      topFlaggedAssets: [
-        db.assets[0]?.name || "Caterpillar Excavator",
-        db.assets[1]?.name || "DeWalt Rotary Hammer"
-      ],
-      executiveSummary: `Aperture AI Engine analyzed ${recentEvents.length} event pulses. Operational risk is evaluated at ${activeAlerts.length > 0 ? "HIGH due to active geofence alerts" : "LOW with 99.4% tag stability"}. Recommending portal gate antenna calibration.`
+      riskScore: activeAlerts.length > 0 ? 55 : 10,
+      riskLevel: activeAlerts.length > 0 ? "MEDIUM" : "LOW",
+      anomaliesDetected: activeAlerts.map((a) => `${a.type} on ${a.assetName}: ${a.message}`),
+      topFlaggedAssets: activeAlerts.map((a) => a.assetName).filter(Boolean),
+      executiveSummary: `Analysis completed on ${recentEvents.length} real event records and ${totalAssets} registered assets. Operational state is currently ${activeAlerts.length > 0 ? "FLAGGED due to unresolved alerts" : "NORMAL with no active breaches"}.`
     };
   }
   res.json({
     success: true,
+    hasData: true,
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     eventsAnalyzedCount: recentEvents.length,
     analysis: aiAnalysis
@@ -5107,17 +3269,17 @@ app.all(["/api/beeceptor/events", "/api/v1/beeceptor/events"], async (req, res) 
 app.all(["/getTagsInRealTime", "/api/getTagsInRealTime", "/api/gao/getTagsInRealTime", "/getTagsInReadTime", "/api/getTagsInReadTime", "/api/gao/getTagsInReadTime"], (req, res) => {
   setNoCacheHeaders(res);
   const authHeader = req.headers["x-api-key"] || req.headers["authorization"];
-  const sourceAssets = db.assets && db.assets.length > 0 ? db.assets : DEFAULT_ASSETS;
+  const sourceAssets = db.assets || [];
   const tagList = sourceAssets.map((a) => ({
-    epc: a.tagEpc || `E2801191A000001000000${a.id.replace(/\D/g, "").padEnd(3, "0")}`,
+    epc: a.tagEpc || `E2801191A000001000000${(a.id || "").replace(/\D/g, "").padEnd(3, "0")}`,
     assetId: a.id,
     name: a.name,
     category: a.category,
-    status: a.status || "In Zone",
-    zone: a.zoneName || "Laydown Yard A",
+    status: a.status || "Active",
+    zone: a.zoneName || "",
     lastSeen: a.lastSeenAt || (/* @__PURE__ */ new Date()).toISOString(),
     rssi: a.rssi || -48,
-    site: a.siteName || "Downtown Metro Tower"
+    site: a.siteName || ""
   }));
   res.json({
     status: 200,
@@ -5284,68 +3446,49 @@ app.get(["/api/events/sse", "/api/v1/events/sse"], (req, res) => {
   res.setHeader("Connection", "keep-alive");
   res.setHeader("Access-Control-Allow-Origin", "*");
   const sendPulse = () => {
-    const randomAsset = db.assets[Math.floor(Math.random() * db.assets.length)] || db.assets[0];
-    const randomReader = db.readers[Math.floor(Math.random() * db.readers.length)] || db.readers[0];
-    const pulseEvent = {
-      id: `sse-pulse-${Date.now()}`,
-      epc: randomAsset?.tagEpc || "E2801191A000001000000101",
-      assetName: randomAsset?.name || "Main Gate Scanner",
-      readerName: randomReader?.name || "Gate 1 Portal",
-      zoneName: randomReader?.zoneName || "Main Entrance",
-      rssi: -45 - Math.floor(Math.random() * 25),
-      timestamp: (/* @__PURE__ */ new Date()).toISOString()
-    };
-    res.write(`data: ${JSON.stringify(pulseEvent)}
+    if (db.events && db.events.length > 0) {
+      const latestEvent = db.events[0];
+      res.write(`data: ${JSON.stringify(latestEvent)}
 
 `);
+    }
   };
   sendPulse();
-  const intervalId = setInterval(sendPulse, 4e3);
+  const intervalId = setInterval(sendPulse, 1e4);
   req.on("close", () => {
     clearInterval(intervalId);
   });
 });
 app.get(["/api/people", "/api/v1/people"], (req, res) => {
   setNoCacheHeaders(res);
-  res.json(db.users);
+  res.json(db.users || []);
 });
 app.get(["/api/visitors", "/api/v1/visitors"], (req, res) => {
   setNoCacheHeaders(res);
-  const visitors = [
-    { id: "vis-101", name: "Mark Vance", company: "OSHA Safety Audit Co.", host: "Sarah Jenkins", badgeEpc: "E2801191A0000010000009901", site: "Downtown Metro Tower", status: "ACTIVE", checkedInAt: new Date(Date.now() - 36e5 * 2).toISOString() },
-    { id: "vis-102", name: "Laura Linney", company: "Caterpillar Hydraulics", host: "Carlos Mendez", badgeEpc: "E2801191A0000010000009902", site: "Highway 101 Expansion", status: "CHECKED_OUT", checkedInAt: new Date(Date.now() - 36e5 * 6).toISOString(), checkedOutAt: new Date(Date.now() - 36e5 * 1).toISOString() }
-  ];
-  res.json(visitors);
+  res.json(db.visitors || []);
 });
 app.get(["/api/attendance", "/api/v1/attendance"], (req, res) => {
   setNoCacheHeaders(res);
-  const attendanceLogs = db.users.map((u, i) => ({
-    id: `att-${u.id}`,
-    userId: u.id,
-    userName: u.name,
-    badgeId: u.badgeId,
-    siteName: db.sites[i % db.sites.length]?.name || "Downtown Metro Tower",
-    checkInTime: new Date(Date.now() - 36e5 * (i + 1) * 2).toISOString(),
-    rfidGateReader: "Main Entrance RFID Portal",
-    status: "PRESENT"
-  }));
-  res.json(attendanceLogs);
+  res.json(db.attendance || []);
 });
 app.get(["/api/assets/:id/playback", "/api/v1/assets/:id/playback"], (req, res) => {
   setNoCacheHeaders(res);
   const id = req.params.id;
-  const asset = db.assets.find((a) => a.id === id) || db.assets[0];
-  const now = Date.now();
-  const trajectory = [
-    { step: 1, timestamp: new Date(now - 36e5 * 5).toISOString(), zoneName: "Central Storage Yard", readerName: "Fixed Reader Yard West", rssi: -62, lat: 37.7749, lng: -122.4194 },
-    { step: 2, timestamp: new Date(now - 36e5 * 3).toISOString(), zoneName: "Gate 2 Checkout Portal", readerName: "Handheld UHF Reader #3", rssi: -41, lat: 37.7758, lng: -122.4182 },
-    { step: 3, timestamp: new Date(now - 36e5 * 1).toISOString(), zoneName: "Tower Floor 4 Assembly", readerName: "Mobile Gate Portal #1", rssi: -48, lat: 37.7765, lng: -122.417 },
-    { step: 4, timestamp: (/* @__PURE__ */ new Date()).toISOString(), zoneName: asset?.zoneName || "Current Zone", readerName: "Portal Gateway A1", rssi: asset?.rssi || -50, lat: 37.777, lng: -122.4162 }
-  ];
+  const asset = (db.assets || []).find((a) => a.id === id);
+  const realMovements = db.movements ? db.movements.filter((m) => m.assetId === id) : [];
+  const realBreadcrumbs = db.gpsBreadcrumbs ? db.gpsBreadcrumbs.filter((b) => b.assetId === id) : [];
+  const trajectory = realBreadcrumbs.length > 0 ? realBreadcrumbs : realMovements.map((m, idx) => ({
+    step: idx + 1,
+    timestamp: m.timestamp || (/* @__PURE__ */ new Date()).toISOString(),
+    zoneName: m.toZoneName || m.zoneName || "Job Site",
+    readerName: m.readerName || "Site Gateway",
+    lat: m.coordinates?.lat,
+    lng: m.coordinates?.lng
+  }));
   res.json({
-    assetId: asset?.id,
-    assetName: asset?.name,
-    tagEpc: asset?.tagEpc,
+    assetId: asset?.id || id,
+    assetName: asset?.name || "Asset",
+    tagEpc: asset?.tagEpc || "",
     totalBreadcrumbs: trajectory.length,
     trajectory
   });

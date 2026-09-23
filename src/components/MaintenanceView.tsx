@@ -9,12 +9,14 @@ interface MaintenanceViewProps {
 }
 
 export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
-  maintenanceLogs,
-  assets,
+  maintenanceLogs = [],
+  assets = [],
   onCreateMaintenance
 }) => {
+  const safeLogs = maintenanceLogs || [];
+  const safeAssets = assets || [];
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [selectedAssetId, setSelectedAssetId] = useState((assets || [])[0]?.id || '');
+  const [selectedAssetId, setSelectedAssetId] = useState(safeAssets[0]?.id || '');
   const [maintType, setMaintType] = useState<'Preventive' | 'Repair' | 'Calibration' | 'Inspection'>('Preventive');
   const [technician, setTechnician] = useState('Elena Rostova');
   const [cost, setCost] = useState(450);
@@ -22,7 +24,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
 
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const asset = assets.find(a => a.id === selectedAssetId);
+    const asset = safeAssets.find(a => a.id === selectedAssetId);
     onCreateMaintenance({
       assetId: selectedAssetId,
       assetName: asset?.name || 'Asset',
@@ -73,7 +75,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {(maintenanceLogs || []).map(m => (
+            {safeLogs.map(m => (
               <tr key={m.id} className="hover:bg-slate-50">
                 <td className="py-3 px-4 font-mono font-bold text-amber-800">
                   {m.workOrderId}

@@ -85,21 +85,21 @@ export const DeveloperApiView: React.FC<DeveloperApiViewProps> = () => {
     { 
       path: '/api/GetHistoryTotalCount', 
       method: 'GET', 
-      label: '1. GetHistoryTotalCount',
+      label: 'GetHistoryTotalCount',
       badge: 'Count',
       description: 'Get total count of history data in GAO software system'
     },
     { 
       path: `/api/GetHistoryRecords/${skipCount}/${takeCount}`, 
       method: 'GET', 
-      label: `2. GetHistoryRecords (${skipCount}/${takeCount})`,
+      label: `GetHistoryRecords (${skipCount}/${takeCount})`,
       badge: 'Records',
       description: 'Get specific history data: time of entering and leaving zones for tags (Max TakeCount: 200)'
     },
     { 
       path: '/api/GetTagsInRealtime', 
       method: 'GET', 
-      label: '3. GetTagsInRealtime',
+      label: 'GetTagsInRealtime',
       badge: 'Real-Time',
       description: 'Get tags reported in real-time by reader antennas covering each zone (1 reader, 2 antennas)'
     }
@@ -314,7 +314,7 @@ export const DeveloperApiView: React.FC<DeveloperApiViewProps> = () => {
     showNotification('Collection JSON copied! Paste directly into Postman > Import > Raw text');
   };
 
-  const filteredLogs = logs.filter((log) => {
+  const filteredLogs = (logs || []).filter((log) => {
     const matchesSearch = 
       log.endpoint.toLowerCase().includes(searchTerm.toLowerCase()) ||
       log.method.toLowerCase().includes(searchTerm.toLowerCase()) ||

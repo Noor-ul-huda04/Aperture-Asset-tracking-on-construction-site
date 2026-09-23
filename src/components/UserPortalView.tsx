@@ -83,7 +83,7 @@ export const UserPortalView: React.FC<UserPortalViewProps> = ({
     if (firebaseUser) {
       const googleSyncedUser: User = {
         id: firebaseUser.uid,
-        name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Google Authenticated User',
+        name: firebaseUser.displayName || (firebaseUser.email ? firebaseUser.email.split('@')[0] : '') || 'Google Authenticated User',
         email: firebaseUser.email || 'user@apertureconst.com',
         role: 'Site Manager',
         siteAccess: ['site-1', 'site-2', 'site-3'],
@@ -105,7 +105,7 @@ export const UserPortalView: React.FC<UserPortalViewProps> = ({
   const userCheckouts = (checkouts || []).filter(c => c.status === 'ACTIVE' && (c.userId === currentUser?.id || c.userName === currentUser?.name));
 
   // Maintenance tasks assigned to user
-  const userMaintenance = (maintenanceLogs || []).filter(m => m.technician === currentUser?.name || (m.technician && currentUser?.name && m.technician.includes(currentUser.name.split(' ')[0])));
+  const userMaintenance = (maintenanceLogs || []).filter(m => m.technician === currentUser?.name || (m.technician && currentUser?.name && m.technician.includes(currentUser.name.split(' ')?.[0] || currentUser.name)));
 
   // User audit history
   const userLogs = (auditLogs || []).filter(l => l.userId === currentUser?.id || l.userName === currentUser?.name);
@@ -580,7 +580,7 @@ export const UserPortalView: React.FC<UserPortalViewProps> = ({
                 </tr>
               ) : (
                 filteredUsers.map((u) => {
-                  const isActiveUser = currentUser.id === u.id;
+                  const isActiveUser = currentUser?.id === u.id;
                   return (
                     <tr key={u.id} className={`hover:bg-slate-50/80 transition-colors ${isActiveUser ? 'bg-blue-50/50 font-medium' : ''}`}>
                       <td className="px-4 py-3">

@@ -34,13 +34,8 @@ export const GeofenceAlertsView: React.FC<GeofenceAlertsViewProps> = ({
   const unresolved = (alerts || []).filter(a => !a.resolved && (a as any).status !== 'RESOLVED');
   const resolved = (alerts || []).filter(a => a.resolved || (a as any).status === 'RESOLVED');
 
-  // Interactive Geofence Zones
-  const [geofenceZones, setGeofenceZones] = useState([
-    { id: 'zone-01', name: 'Main Construction Site Outer Perimeter', radiusMeters: 250, status: 'ACTIVE', type: 'OUTER_BOUNDARY', site: 'Harbor Expansion Site A' },
-    { id: 'zone-02', name: 'Tool Crib & Heavy Equipment Enclosure', radiusMeters: 45, status: 'ACTIVE', type: 'RESTRICTED_ZONE', site: 'Harbor Expansion Site A' },
-    { id: 'zone-03', name: 'South Loading Dock & RFID Portal Gate 1', radiusMeters: 20, status: 'ACTIVE', type: 'GATEWAY_PORTAL', site: 'Downtown Tower Site B' },
-    { id: 'zone-04', name: 'East Storage Yard B', radiusMeters: 100, status: 'MONITORED', type: 'STORAGE_YARD', site: 'Substation Yard C' }
-  ]);
+  // Interactive Geofence Zones (Real user/database defined zones only)
+  const [geofenceZones, setGeofenceZones] = useState<Array<{ id: string; name: string; radiusMeters: number; status: string; type: string; site: string }>>([]);
 
   // Geofence Security Rules State
   const [curfewHour, setCurfewHour] = useState('18:00');
@@ -245,8 +240,15 @@ export const GeofenceAlertsView: React.FC<GeofenceAlertsViewProps> = ({
             </div>
 
             {/* Geofence Zone Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {geofenceZones.map((zone) => (
+            {geofenceZones.length === 0 ? (
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-8 text-center text-slate-500 space-y-2">
+                <MapPin className="w-8 h-8 text-slate-300 mx-auto" />
+                <h4 className="font-bold text-sm text-slate-800">No active geofences configured.</h4>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto">Click "Add Virtual Boundary Zone" to establish GPS coordinates, alert radii, and security perimeters.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {geofenceZones.map((zone) => (
                 <div key={zone.id} className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -282,7 +284,8 @@ export const GeofenceAlertsView: React.FC<GeofenceAlertsViewProps> = ({
                   </div>
                 </div>
               ))}
-            </div>
+              </div>
+            )}
           </div>
 
           {/* Security Rules & Notification Preferences */}

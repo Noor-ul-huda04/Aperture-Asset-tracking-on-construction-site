@@ -36,13 +36,14 @@ interface SettingsViewProps {
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
-  sites,
+  sites = [],
   currentUser,
   onRefreshAll,
   onNavigateTab,
   currentTimezone = 'UTC',
   onChangeTimezone
 }) => {
+  const safeSites = sites || [];
   // Page tab state inside settings: 5 clean, non-overlapping configuration tabs
   type SettingsTab = 'general' | 'notifications' | 'rfid_params' | 'database' | 'api_connector';
   const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>('general');
@@ -377,7 +378,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     onChange={(e) => setDefaultSiteId(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   >
-                    {sites.map(s => (
+                    {safeSites.map(s => (
                       <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
                     ))}
                   </select>

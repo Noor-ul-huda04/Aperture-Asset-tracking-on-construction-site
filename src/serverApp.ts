@@ -82,324 +82,27 @@ interface DbState {
   };
 }
 
-const DEFAULT_SITES: Site[] = [
-  {
-    id: 'SITE-001',
-    name: 'Downtown Metro Tower',
-    code: 'DMT-01',
-    address: '450 North Michigan Ave, Chicago, IL',
-    manager: 'Sarah Jenkins',
-    activeAssetsCount: 6,
-    totalAssetsValue: 540000,
-    coordinates: { lat: 41.8902, lng: -87.6244 },
-    zones: [
-      { id: 'zone-01', siteId: 'SITE-001', name: 'Laydown Yard A', type: 'Laydown Yard', readerIds: ['reader-101'], capacity: 25, currentCount: 3, color: '#3b82f6' },
-      { id: 'zone-02', siteId: 'SITE-001', name: 'East Loading Dock', type: 'Entry Gate', readerIds: ['reader-102'], capacity: 15, currentCount: 2, color: '#10b981' },
-      { id: 'zone-03', siteId: 'SITE-001', name: 'Secure Tool Crib B', type: 'Storage Crib', readerIds: ['reader-103'], capacity: 40, currentCount: 1, color: '#8b5cf6' }
-    ]
-  },
-  {
-    id: 'SITE-002',
-    name: 'Riverside Commercial Complex',
-    code: 'RCC-02',
-    address: '1200 River Road, Austin, TX',
-    manager: 'Michael Chang',
-    activeAssetsCount: 4,
-    totalAssetsValue: 320000,
-    coordinates: { lat: 30.2672, lng: -97.7431 },
-    zones: [
-      { id: 'zone-04', siteId: 'SITE-002', name: 'Main Staging Yard', type: 'Laydown Yard', readerIds: ['reader-104'], capacity: 30, currentCount: 3, color: '#f59e0b' },
-      { id: 'zone-05', siteId: 'SITE-002', name: 'High-Value Vault', type: 'Storage Crib', readerIds: ['reader-105'], capacity: 10, currentCount: 1, color: '#ef4444' }
-    ]
-  }
-];
-
-const DEFAULT_READERS: Reader[] = [
-  {
-    id: 'reader-101',
-    name: 'Gate Portal Reader #1 (LLRP-01)',
-    type: 'Fixed Portal',
-    siteId: 'SITE-001',
-    siteName: 'Downtown Metro Tower',
-    zoneId: 'zone-01',
-    zoneName: 'Laydown Yard A',
-    status: 'Online',
-    lastHeartbeat: new Date().toISOString(),
-    antennaPowerDbm: 30,
-    ipAddress: '192.168.1.101',
-    readCountTotal: 4892,
-    bufferedEventsCount: 0,
-    firmwareVersion: 'v4.2.0-GAO'
-  },
-  {
-    id: 'reader-102',
-    name: 'East Dock Overhead Array #2',
-    type: 'Fixed Portal',
-    siteId: 'SITE-001',
-    siteName: 'Downtown Metro Tower',
-    zoneId: 'zone-02',
-    zoneName: 'East Loading Dock',
-    status: 'Online',
-    lastHeartbeat: new Date().toISOString(),
-    antennaPowerDbm: 28,
-    ipAddress: '192.168.1.102',
-    readCountTotal: 3120,
-    bufferedEventsCount: 0,
-    firmwareVersion: 'v4.2.0-GAO'
-  },
-  {
-    id: 'reader-103',
-    name: 'Tool Crib Access Portal #3',
-    type: 'Fixed Portal',
-    siteId: 'SITE-001',
-    siteName: 'Downtown Metro Tower',
-    zoneId: 'zone-03',
-    zoneName: 'Secure Tool Crib B',
-    status: 'Online',
-    lastHeartbeat: new Date().toISOString(),
-    antennaPowerDbm: 24,
-    ipAddress: '192.168.1.103',
-    readCountTotal: 1840,
-    bufferedEventsCount: 0,
-    firmwareVersion: 'v4.2.0-GAO'
-  },
-  {
-    id: 'reader-104',
-    name: 'Field Rugged Handheld Zebra TC57',
-    type: 'Handheld',
-    siteId: 'SITE-002',
-    siteName: 'Riverside Commercial Complex',
-    zoneId: 'zone-04',
-    zoneName: 'Main Staging Yard',
-    status: 'Online',
-    lastHeartbeat: new Date().toISOString(),
-    antennaPowerDbm: 27,
-    ipAddress: '192.168.2.14',
-    readCountTotal: 960,
-    bufferedEventsCount: 0,
-    firmwareVersion: 'v4.2.0-GAO'
-  }
-];
-
-const DEFAULT_ASSETS: Asset[] = [
-  {
-    id: 'ast-1001',
-    name: 'DeWalt 20V MAX Impact Driver Kit',
-    category: 'Tools',
-    subCategory: 'Fastening',
-    manufacturer: 'DeWalt',
-    model: 'DCF887M2',
-    serialNumber: 'SN-DW-884912',
-    tagEpc: 'E2801191A000001000000456',
-    status: 'In Zone',
-    siteId: 'SITE-001',
-    siteName: 'Downtown Metro Tower',
-    zoneId: 'zone-01',
-    zoneName: 'Laydown Yard A',
-    purchaseDate: '2024-03-15',
-    cost: 349,
-    isRental: false,
-    lastSeenAt: new Date().toISOString(),
-    lastReaderId: 'reader-101',
-    rssi: -48,
-    photoUrl: 'https://images.unsplash.com/photo-1504148455328-c376907d081c?auto=format&fit=crop&q=80&w=800',
-    condition: 'Good'
-  },
-  {
-    id: 'ast-1002',
-    name: 'Caterpillar 320D Hydraulic Excavator',
-    category: 'Heavy Equipment',
-    subCategory: 'Earthmoving',
-    manufacturer: 'Caterpillar',
-    model: '320D L',
-    serialNumber: 'SN-CAT-320D-9981',
-    tagEpc: 'E2801191A000001000000457',
-    status: 'In Zone',
-    siteId: 'SITE-001',
-    siteName: 'Downtown Metro Tower',
-    zoneId: 'zone-02',
-    zoneName: 'East Loading Dock',
-    purchaseDate: '2023-08-10',
-    cost: 215000,
-    isRental: true,
-    rentalCostPerDay: 850,
-    lastSeenAt: new Date().toISOString(),
-    lastReaderId: 'reader-102',
-    rssi: -44,
-    photoUrl: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&q=80&w=800',
-    condition: 'Good'
-  },
-  {
-    id: 'ast-1003',
-    name: 'Trimble SX12 Scanning Total Station',
-    category: 'Tools',
-    subCategory: 'High Precision LiDAR',
-    manufacturer: 'Trimble',
-    model: 'SX12',
-    serialNumber: 'SN-TRM-SX12-4410',
-    tagEpc: 'E2801191A000001000000458',
-    status: 'In Zone',
-    siteId: 'SITE-001',
-    siteName: 'Downtown Metro Tower',
-    zoneId: 'zone-03',
-    zoneName: 'Secure Tool Crib B',
-    purchaseDate: '2024-01-20',
-    cost: 48000,
-    isRental: false,
-    lastSeenAt: new Date().toISOString(),
-    lastReaderId: 'reader-103',
-    rssi: -52,
-    photoUrl: 'https://images.unsplash.com/photo-1581092335397-9583fe92d232?auto=format&fit=crop&q=80&w=800',
-    condition: 'Excellent'
-  },
-  {
-    id: 'ast-1004',
-    name: 'Generac 100kVA Mobile Diesel Generator',
-    category: 'Heavy Equipment',
-    subCategory: 'Generators',
-    manufacturer: 'Generac',
-    model: 'MDG100',
-    serialNumber: 'SN-GEN-MDG100-22',
-    tagEpc: 'E2801191A000001000000459',
-    status: 'In Zone',
-    siteId: 'SITE-001',
-    siteName: 'Downtown Metro Tower',
-    zoneId: 'zone-01',
-    zoneName: 'Laydown Yard A',
-    purchaseDate: '2023-11-05',
-    cost: 38500,
-    isRental: false,
-    lastSeenAt: new Date().toISOString(),
-    lastReaderId: 'reader-101',
-    rssi: -50,
-    photoUrl: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&q=80&w=800',
-    condition: 'Good'
-  },
-  {
-    id: 'ast-1005',
-    name: 'Hilti TE 70-ATC SDS-Max Rotary Hammer',
-    category: 'Tools',
-    subCategory: 'Demolition & Drilling',
-    manufacturer: 'Hilti',
-    model: 'TE 70-ATC',
-    serialNumber: 'SN-HLT-TE70-7719',
-    tagEpc: 'E2801191A000001000000460',
-    status: 'In Zone',
-    siteId: 'SITE-001',
-    siteName: 'Downtown Metro Tower',
-    zoneId: 'zone-01',
-    zoneName: 'Laydown Yard A',
-    purchaseDate: '2024-05-12',
-    cost: 1850,
-    isRental: false,
-    lastSeenAt: new Date().toISOString(),
-    lastReaderId: 'reader-101',
-    rssi: -46,
-    photoUrl: 'https://images.unsplash.com/photo-1504148455328-c376907d081c?auto=format&fit=crop&q=80&w=800',
-    condition: 'Good'
-  },
-  {
-    id: 'ast-1006',
-    name: 'Liebherr 280 EC-H 12 Litronic Tower Crane',
-    category: 'Heavy Equipment',
-    subCategory: 'Lifting & Hoisting',
-    manufacturer: 'Liebherr',
-    model: '280 EC-H 12',
-    serialNumber: 'SN-LBH-280-552',
-    tagEpc: 'E2801191A000001000000461',
-    status: 'In Zone',
-    siteId: 'SITE-001',
-    siteName: 'Downtown Metro Tower',
-    zoneId: 'zone-02',
-    zoneName: 'East Loading Dock',
-    purchaseDate: '2022-09-18',
-    cost: 620000,
-    isRental: false,
-    lastSeenAt: new Date().toISOString(),
-    lastReaderId: 'reader-102',
-    rssi: -40,
-    photoUrl: 'https://images.unsplash.com/photo-1541888946425-d0fbb18086f6?auto=format&fit=crop&q=80&w=800',
-    condition: 'Good'
-  }
-];
-
-const DEFAULT_USERS: User[] = [
-  {
-    id: 'usr-1',
-    name: 'Sarah Jenkins',
-    email: 'sarah.jenkins@aperture.build',
-    role: 'Site Manager',
-    siteAccess: ['SITE-001', 'SITE-002'],
-    badgeId: 'BDG-9901',
-    avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=256',
-    phone: '+1 (555) 234-5678'
-  },
-  {
-    id: 'usr-2',
-    name: 'Marcus Brody',
-    email: 'marcus.brody@aperture.build',
-    role: 'Field Worker',
-    siteAccess: ['SITE-001'],
-    badgeId: 'BDG-9902',
-    avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=256',
-    phone: '+1 (555) 345-6789'
-  }
-];
-
-const DEFAULT_INVENTORY: InventoryItem[] = [
-  {
-    id: 'inv-101',
-    name: 'Industrial Heavy Duty UHF RFID Passive Tags (Pack of 100)',
-    category: 'Supplies',
-    siteId: 'SITE-001',
-    siteName: 'Downtown Metro Tower',
-    quantityOnHand: 450,
-    minThreshold: 100,
-    reorderPoint: 150,
-    unit: 'tags',
-    costPerUnit: 1.25
-  },
-  {
-    id: 'inv-102',
-    name: 'Anti-Metal Mountable On-Metal RFID Gen2 Tags',
-    category: 'Supplies',
-    siteId: 'SITE-001',
-    siteName: 'Downtown Metro Tower',
-    quantityOnHand: 180,
-    minThreshold: 50,
-    reorderPoint: 80,
-    unit: 'tags',
-    costPerUnit: 4.80
-  },
-  {
-    id: 'inv-103',
-    name: 'Zebra TC57 Replacement Lithium-Ion Batteries',
-    category: 'Equipment',
-    siteId: 'SITE-002',
-    siteName: 'Riverside Commercial Complex',
-    quantityOnHand: 12,
-    minThreshold: 4,
-    reorderPoint: 6,
-    unit: 'batteries',
-    costPerUnit: 85
-  }
-];
+const DEFAULT_SITES: Site[] = [];
+const DEFAULT_READERS: Reader[] = [];
+const DEFAULT_ASSETS: Asset[] = [];
+const DEFAULT_USERS: User[] = [];
+const DEFAULT_INVENTORY: InventoryItem[] = [];
 
 let db: DbState = {
-  assets: [...DEFAULT_ASSETS],
-  sites: [...DEFAULT_SITES],
-  users: [...DEFAULT_USERS],
-  readers: [...DEFAULT_READERS],
+  assets: [],
+  sites: [],
+  users: [],
+  readers: [],
   checkouts: [],
   maintenance: [],
   alerts: [],
-  inventory: [...DEFAULT_INVENTORY],
+  inventory: [],
   events: [],
   auditLogs: [],
   apiEndpointLogs: [],
   streamConfig: {
-    isStreaming: true,
-    eventsPerMinute: 12,
+    isStreaming: false,
+    eventsPerMinute: 0,
     offlineBufferMode: false,
     bufferedCount: 0
   },
@@ -409,9 +112,9 @@ let db: DbState = {
     authHeaderScheme: 'Bearer Token',
     pollingIntervalSeconds: 15,
     isPollingActive: false,
-    lastVerifiedAt: new Date().toISOString(),
-    latencyMs: 120,
-    status: 'CONNECTED'
+    lastVerifiedAt: undefined,
+    latencyMs: 0,
+    status: 'DISCONNECTED'
   }
 };
 
@@ -449,35 +152,26 @@ async function syncMongoDBOnStartup() {
   const mongoDb = getDb();
   if (!mongoDb) return;
 
-  const defaultSeeds: Record<string, any[]> = {
-    assets: DEFAULT_ASSETS,
-    sites: DEFAULT_SITES,
-    users: DEFAULT_USERS,
-    readers: DEFAULT_READERS,
-    inventory: DEFAULT_INVENTORY
-  };
-
   const collections = ['assets', 'sites', 'users', 'readers', 'checkouts', 'maintenance', 'alerts', 'inventory', 'events', 'auditLogs'];
+
+  // Purge any legacy demo/mock IDs from previous sessions to enforce STRICT NO DEMO DATA policy
+  const legacyMockIds = ['ast-1001', 'ast-1002', 'ast-1003', 'ast-1004', 'ast-1005', 'ast-1006', 'SITE-001', 'SITE-002', 'usr-1', 'usr-2', 'inv-101', 'inv-102', 'inv-103', 'reader-101', 'reader-102', 'reader-103', 'reader-104'];
 
   await Promise.all(collections.map(async (collName) => {
     try {
       const coll = mongoDb.collection(collName);
+      // Clean up legacy mock IDs if they exist
+      await coll.deleteMany({ id: { $in: legacyMockIds } } as any).catch(() => {});
+      
       const docs = await coll.find({}).toArray();
-      if (docs.length > 0) {
-        const cleaned = docs.map((doc: any) => {
-          const { _id, ...rest } = doc;
-          return { id: doc.id || (_id ? String(_id) : undefined), ...rest };
-        });
-        (db as any)[collName] = cleaned;
-        console.log(`[MongoDB Atlas] Loaded ${cleaned.length} documents from collection '${collName}'.`);
-      } else if (defaultSeeds[collName] && defaultSeeds[collName].length > 0) {
-        // Seed initial default documents into MongoDB Atlas collection so it's permanently stored in MongoDB
-        const seedDocs = defaultSeeds[collName].map(item => ({ ...item, _id: item.id as any }));
-        await coll.insertMany(seedDocs);
-        console.log(`[MongoDB Atlas] Initialized collection '${collName}' with ${seedDocs.length} seed documents.`);
-      }
+      const cleaned = docs.map((doc: any) => {
+        const { _id, ...rest } = doc;
+        return { id: doc.id || (_id ? String(_id) : undefined), ...rest };
+      });
+      (db as any)[collName] = cleaned;
+      console.log(`[Database] Loaded ${cleaned.length} documents from collection '${collName}'.`);
     } catch (e: any) {
-      console.warn(`[MongoDB Atlas] Error syncing collection '${collName}':`, e.message);
+      console.warn(`[Database] Error syncing collection '${collName}':`, e.message);
     }
   }));
 
@@ -1412,8 +1106,8 @@ app.post(['/api/assets', '/api/v1/assets', '/assets'], async (req, res) => {
       status: body.status || 'In Zone',
       siteId: body.siteId || db.sites[0]?.id || 'site-01',
       siteName: db.sites.find(s => s.id === body.siteId)?.name || db.sites[0]?.name || 'Downtown Metro Tower',
-      zoneId: body.zoneId || db.sites[0]?.zones[0]?.id || 'z-01',
-      zoneName: db.sites[0]?.zones?.find(z => z.id === body.zoneId)?.name || db.sites[0]?.zones[0]?.name || 'Laydown Yard A',
+      zoneId: body.zoneId || db.sites[0]?.zones?.[0]?.id || 'z-01',
+      zoneName: db.sites[0]?.zones?.find(z => z.id === body.zoneId)?.name || db.sites[0]?.zones?.[0]?.name || 'Laydown Yard A',
       purchaseDate: body.purchaseDate || new Date().toISOString().split('T')[0],
       cost: Number(body.cost) || 500,
       rentalCostPerDay: body.isRental ? Number(body.rentalCostPerDay) || 50 : 0,
@@ -2917,24 +2611,35 @@ app.post(['/api/ai/analyze-behavior', '/api/v1/ai/analyze-behavior'], async (req
   const totalAssets = db.assets.length;
   const activeAlerts = db.alerts.filter(a => !a.resolved);
 
+  // STRICT NO DEMO DATA: AI must only analyze real data available in the database.
+  if (totalAssets === 0 && recentEvents.length === 0) {
+    return res.json({
+      success: true,
+      hasData: false,
+      message: 'Insufficient operational data for analysis.',
+      eventsAnalyzedCount: 0,
+      analysis: null
+    });
+  }
+
   let aiAnalysis = null;
   const ai = getAiClient();
 
-  if (ai) {
+  if (ai && (totalAssets > 0 || recentEvents.length > 0)) {
     try {
       const prompt = `You are the AI Event Behavioral Security Engine for Aperture Construction Asset Tracking System.
-Analyze the following recent RFID tag read events and site metrics:
-- Total Assets Tracked: ${totalAssets}
-- Active Alerts: ${activeAlerts.length} (${activeAlerts.map(a => a.type).join(', ')})
-- Recent Events Sample:
+Analyze the following real operational RFID/GPS asset tracking records and site metrics from the database:
+- Total Real Assets Tracked: ${totalAssets}
+- Real Active Alerts: ${activeAlerts.length} (${activeAlerts.map(a => a.type).join(', ')})
+- Real Events Sample:
 ${recentEvents.slice(0, 10).map(e => `[${e.timestamp}] Asset: "${e.assetName}" (${e.epc}), Reader: "${e.readerName}" in Zone: "${e.zoneName}", RSSI: ${e.rssi}dBm`).join('\n')}
 
 Task: Provide a JSON object with:
 1. "riskScore": integer between 0 and 100 representing overall behavioral anomaly threat score
 2. "riskLevel": string ("LOW" | "MEDIUM" | "HIGH" | "CRITICAL")
-3. "anomaliesDetected": array of strings listing detected behavioral anomalies
-4. "topFlaggedAssets": array of string names of assets showing suspicious movement
-5. "executiveSummary": string explaining behavioral patterns and recommended security actions.
+3. "anomaliesDetected": array of strings listing detected behavioral anomalies (based ONLY on the real data provided)
+4. "topFlaggedAssets": array of string names of real assets showing suspicious movement
+5. "executiveSummary": string explaining real behavioral patterns and recommended operational actions.
 Return ONLY valid JSON.`;
 
       const response = await ai.models.generateContent({
@@ -2946,33 +2651,32 @@ Return ONLY valid JSON.`;
       const cleanedJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
       aiAnalysis = JSON.parse(cleanedJson);
     } catch (e: any) {
-      if (e?.message?.includes('resource_exhausted') || e?.message?.includes('quota') || e?.status === 429) {
-        console.warn('Gemini API Quota Exceeded / Rate Limited (falling back to local secure heuristic engine).');
-      } else {
-        console.warn('Gemini behavior analysis fallback due to error:', e);
-      }
+      console.warn('[Gemini AI Behavior Engine Error]', e?.message);
     }
   }
 
   if (!aiAnalysis) {
+    if (totalAssets === 0 && recentEvents.length === 0) {
+      return res.json({
+        success: true,
+        hasData: false,
+        message: 'Insufficient operational data for analysis.',
+        analysis: null
+      });
+    }
+
     aiAnalysis = {
-      riskScore: activeAlerts.length > 0 ? 68 : 18,
-      riskLevel: activeAlerts.length > 0 ? 'HIGH' : 'LOW',
-      anomaliesDetected: [
-        'High RSSI fluctuation at Gate Reader #1 (-38 dBm to -72 dBm)',
-        'Multiple power tool scans during non-shift window (02:14 AM)',
-        'Laydown Yard asset dwell time exceeding 14-day threshold'
-      ],
-      topFlaggedAssets: [
-        db.assets[0]?.name || 'Caterpillar Excavator',
-        db.assets[1]?.name || 'DeWalt Rotary Hammer'
-      ],
-      executiveSummary: `Aperture AI Engine analyzed ${recentEvents.length} event pulses. Operational risk is evaluated at ${activeAlerts.length > 0 ? 'HIGH due to active geofence alerts' : 'LOW with 99.4% tag stability'}. Recommending portal gate antenna calibration.`
+      riskScore: activeAlerts.length > 0 ? 55 : 10,
+      riskLevel: activeAlerts.length > 0 ? 'MEDIUM' : 'LOW',
+      anomaliesDetected: activeAlerts.map(a => `${a.type} on ${a.assetName}: ${a.message}`),
+      topFlaggedAssets: activeAlerts.map(a => a.assetName).filter(Boolean),
+      executiveSummary: `Analysis completed on ${recentEvents.length} real event records and ${totalAssets} registered assets. Operational state is currently ${activeAlerts.length > 0 ? 'FLAGGED due to unresolved alerts' : 'NORMAL with no active breaches'}.`
     };
   }
 
   res.json({
     success: true,
+    hasData: true,
     timestamp: new Date().toISOString(),
     eventsAnalyzedCount: recentEvents.length,
     analysis: aiAnalysis
@@ -3754,17 +3458,17 @@ app.all(['/api/beeceptor/events', '/api/v1/beeceptor/events'], async (req, res) 
 app.all(['/getTagsInRealTime', '/api/getTagsInRealTime', '/api/gao/getTagsInRealTime', '/getTagsInReadTime', '/api/getTagsInReadTime', '/api/gao/getTagsInReadTime'], (req, res) => {
   setNoCacheHeaders(res);
   const authHeader = req.headers['x-api-key'] || req.headers['authorization'];
-  const sourceAssets = (db.assets && db.assets.length > 0) ? db.assets : DEFAULT_ASSETS;
+  const sourceAssets = db.assets || [];
   const tagList = sourceAssets.map(a => ({
-    epc: a.tagEpc || `E2801191A000001000000${a.id.replace(/\D/g, '').padEnd(3, '0')}`,
+    epc: a.tagEpc || `E2801191A000001000000${(a.id || '').replace(/\D/g, '').padEnd(3, '0')}`,
     assetId: a.id,
     name: a.name,
     category: a.category,
-    status: a.status || 'In Zone',
-    zone: a.zoneName || 'Laydown Yard A',
+    status: a.status || 'Active',
+    zone: a.zoneName || '',
     lastSeen: a.lastSeenAt || new Date().toISOString(),
     rssi: a.rssi || -48,
-    site: a.siteName || 'Downtown Metro Tower'
+    site: a.siteName || ''
   }));
 
   res.json({
@@ -3950,23 +3654,16 @@ app.get(['/api/events/sse', '/api/v1/events/sse'], (req: any, res: any) => {
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('Access-Control-Allow-Origin', '*');
 
+  // STRICT NO DEMO DATA: Only stream real event pulses if real events exist
   const sendPulse = () => {
-    const randomAsset = db.assets[Math.floor(Math.random() * db.assets.length)] || db.assets[0];
-    const randomReader = db.readers[Math.floor(Math.random() * db.readers.length)] || db.readers[0];
-    const pulseEvent = {
-      id: `sse-pulse-${Date.now()}`,
-      epc: randomAsset?.tagEpc || 'E2801191A000001000000101',
-      assetName: randomAsset?.name || 'Main Gate Scanner',
-      readerName: randomReader?.name || 'Gate 1 Portal',
-      zoneName: randomReader?.zoneName || 'Main Entrance',
-      rssi: -45 - Math.floor(Math.random() * 25),
-      timestamp: new Date().toISOString()
-    };
-    res.write(`data: ${JSON.stringify(pulseEvent)}\n\n`);
+    if (db.events && db.events.length > 0) {
+      const latestEvent = db.events[0];
+      res.write(`data: ${JSON.stringify(latestEvent)}\n\n`);
+    }
   };
 
   sendPulse();
-  const intervalId = setInterval(sendPulse, 4000);
+  const intervalId = setInterval(sendPulse, 10000);
 
   req.on('close', () => {
     clearInterval(intervalId);
@@ -3976,51 +3673,43 @@ app.get(['/api/events/sse', '/api/v1/events/sse'], (req: any, res: any) => {
 // People, Visitors & Attendance Routes
 app.get(['/api/people', '/api/v1/people'], (req, res) => {
   setNoCacheHeaders(res);
-  res.json(db.users);
+  res.json(db.users || []);
 });
 
 app.get(['/api/visitors', '/api/v1/visitors'], (req, res) => {
   setNoCacheHeaders(res);
-  const visitors = [
-    { id: 'vis-101', name: 'Mark Vance', company: 'OSHA Safety Audit Co.', host: 'Sarah Jenkins', badgeEpc: 'E2801191A0000010000009901', site: 'Downtown Metro Tower', status: 'ACTIVE', checkedInAt: new Date(Date.now() - 3600000*2).toISOString() },
-    { id: 'vis-102', name: 'Laura Linney', company: 'Caterpillar Hydraulics', host: 'Carlos Mendez', badgeEpc: 'E2801191A0000010000009902', site: 'Highway 101 Expansion', status: 'CHECKED_OUT', checkedInAt: new Date(Date.now() - 3600000*6).toISOString(), checkedOutAt: new Date(Date.now() - 3600000*1).toISOString() }
-  ];
-  res.json(visitors);
+  res.json((db as any).visitors || []);
 });
 
 app.get(['/api/attendance', '/api/v1/attendance'], (req, res) => {
   setNoCacheHeaders(res);
-  const attendanceLogs = db.users.map((u, i) => ({
-    id: `att-${u.id}`,
-    userId: u.id,
-    userName: u.name,
-    badgeId: u.badgeId,
-    siteName: db.sites[i % db.sites.length]?.name || 'Downtown Metro Tower',
-    checkInTime: new Date(Date.now() - (3600000 * (i + 1) * 2)).toISOString(),
-    rfidGateReader: 'Main Entrance RFID Portal',
-    status: 'PRESENT'
-  }));
-  res.json(attendanceLogs);
+  res.json((db as any).attendance || []);
 });
 
 // Spatiotemporal Asset Breadcrumb Movement Trajectory
 app.get(['/api/assets/:id/playback', '/api/v1/assets/:id/playback'], (req, res) => {
   setNoCacheHeaders(res);
   const id = req.params.id;
-  const asset = db.assets.find(a => a.id === id) || db.assets[0];
+  const asset = (db.assets || []).find(a => a.id === id);
 
-  const now = Date.now();
-  const trajectory = [
-    { step: 1, timestamp: new Date(now - 3600000 * 5).toISOString(), zoneName: 'Central Storage Yard', readerName: 'Fixed Reader Yard West', rssi: -62, lat: 37.7749, lng: -122.4194 },
-    { step: 2, timestamp: new Date(now - 3600000 * 3).toISOString(), zoneName: 'Gate 2 Checkout Portal', readerName: 'Handheld UHF Reader #3', rssi: -41, lat: 37.7758, lng: -122.4182 },
-    { step: 3, timestamp: new Date(now - 3600000 * 1).toISOString(), zoneName: 'Tower Floor 4 Assembly', readerName: 'Mobile Gate Portal #1', rssi: -48, lat: 37.7765, lng: -122.4170 },
-    { step: 4, timestamp: new Date().toISOString(), zoneName: asset?.zoneName || 'Current Zone', readerName: 'Portal Gateway A1', rssi: asset?.rssi || -50, lat: 37.7770, lng: -122.4162 }
-  ];
+  const realMovements = (db as any).movements ? (db as any).movements.filter((m: any) => m.assetId === id) : [];
+  const realBreadcrumbs = (db as any).gpsBreadcrumbs ? (db as any).gpsBreadcrumbs.filter((b: any) => b.assetId === id) : [];
+
+  const trajectory = realBreadcrumbs.length > 0
+    ? realBreadcrumbs
+    : realMovements.map((m: any, idx: number) => ({
+        step: idx + 1,
+        timestamp: m.timestamp || new Date().toISOString(),
+        zoneName: m.toZoneName || m.zoneName || 'Job Site',
+        readerName: m.readerName || 'Site Gateway',
+        lat: m.coordinates?.lat,
+        lng: m.coordinates?.lng
+      }));
 
   res.json({
-    assetId: asset?.id,
-    assetName: asset?.name,
-    tagEpc: asset?.tagEpc,
+    assetId: asset?.id || id,
+    assetName: asset?.name || 'Asset',
+    tagEpc: asset?.tagEpc || '',
     totalBreadcrumbs: trajectory.length,
     trajectory
   });

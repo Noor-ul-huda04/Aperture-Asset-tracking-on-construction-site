@@ -25,7 +25,7 @@ Structural I-Beam Bundle,Materials,ArcelorMittal,W12x26,SN-MAT-1002,E2801191A000
 export const CsvImportModal: React.FC<CsvImportModalProps> = ({
   isOpen,
   onClose,
-  sites,
+  sites = [],
   onImportBatch
 }) => {
   const [csvText, setCsvText] = useState('');

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Radio, 
   ShieldAlert, 
@@ -18,10 +18,23 @@ import {
   CheckCircle2,
   AlertTriangle,
   Clock,
-  Globe
+  Globe,
+  HardHat,
+  ChevronDown,
+  Shield,
+  QrCode,
+  Search,
+  Sliders,
+  Play,
+  Pause,
+  RotateCcw,
+  Sparkles,
+  Layers,
+  Boxes,
+  Compass,
+  X
 } from 'lucide-react';
-import { Site, User, Alert } from '../types';
-import { useFirebaseAuth } from '../context/FirebaseAuthContext';
+import { Site, User, Alert, Asset } from '../types';
 
 interface HeaderProps {
   sites: Site[];
@@ -44,19 +57,25 @@ interface HeaderProps {
   currentTimezone?: string;
   onChangeTimezone?: (tz: string) => void;
   onLogout?: () => void;
+  assets?: Asset[];
+  onSelectAsset?: (asset: Asset) => void;
+  isSimulationActive?: boolean;
+  onToggleSimulation?: () => void;
+  onResetSimulation?: () => void;
+  onGenerateSimulationEvent?: (eventType: string) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
-  sites,
+  sites = [],
   selectedSiteId,
   onSelectSite,
-  alerts,
+  alerts = [],
   onOpenAlertsModal,
   onOpenHardwareDrawer,
   onOpenMobileView,
   currentUser,
   onSwitchUserRole,
-  allUsers,
+  allUsers = [],
   isStreaming,
   offlineMode,
   isFirestoreOnline = true,
@@ -66,214 +85,310 @@ export const Header: React.FC<HeaderProps> = ({
   onNavigateTab,
   currentTimezone = 'UTC',
   onChangeTimezone,
-  onLogout
-}) => {
-  const [userDropdownOpen, setUserDropdownOpen] = React.useState(false);
-  const unresolvedAlerts = (alerts || []).filter(a => !a.resolved && (a as any).status !== 'RESOLVED');
-  const criticalCount = unresolvedAlerts.filter(a => a.severity === 'CRITICAL').length;
-  const { user: fbUser, authReady, signInWithGoogle, signOut } = useFirebaseAuth();
+  onLogout,
+  assets = [],
+  onSelectAsset,
+  apiConnectionStatus = 'checking',
+  apiStatusMessage = 'Checking API connection...'
+}: HeaderProps & { apiConnectionStatus?: 'connected' | 'not_connected' | 'no_data' | 'checking'; apiStatusMessage?: string }) => {
+  const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
+
+  const unresolvedAlerts = alerts.filter(a => !a.resolved && (a as any).status !== 'Resolved');
+  const criticalCount = unresolvedAlerts.filter(a => a.severity === 'Critical').length;
+
+  // Global search filtering
+  const searchResults = searchQuery.trim().length > 0 
+    ? assets.filter(a => 
+        a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        a.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (a.serialNumber && a.serialNumber.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (a.tagEpc && a.tagEpc.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (a.qrCode && a.qrCode.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (a.siteName && a.siteName.toLowerCase().includes(searchQuery.toLowerCase()))
+      ).slice(0, 6)
+    : [];
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+        setSearchOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   return (
-    <header className="bg-slate-950 border-b border-slate-800/60 text-white sticky top-0 z-30 shadow-md backdrop-blur-xs">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+    <header className="bg-slate-950 border-b border-slate-800 text-white sticky top-0 z-40 shadow-md">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-3">
         
-        {/* Left: Brand & Site Context Selector */}
-        <div className="flex items-center gap-4 shrink-0">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white font-black shadow-lg shadow-blue-500/10 ring-1 ring-blue-400/40 shrink-0">
-            <Radio className="w-5 h-5 stroke-[2.2] animate-pulse" />
+        {/* Left: Exact Product Name & Subtitle + Site Context Selector */}
+        <div className="flex items-center gap-3.5 shrink-0">
+          <div 
+            onClick={() => onNavigateTab && onNavigateTab('dashboard')}
+            className="w-10 h-10 rounded-xl bg-amber-500 flex items-center justify-center text-slate-950 font-black shadow-lg shadow-amber-500/20 ring-1 ring-amber-400 shrink-0 cursor-pointer"
+          >
+            <HardHat className="w-5 h-5 stroke-[2.4]" />
           </div>
-          <div className="flex flex-col justify-center">
+          <div 
+            onClick={() => onNavigateTab && onNavigateTab('dashboard')}
+            className="flex flex-col justify-center cursor-pointer"
+          >
             <div className="flex items-center gap-2">
-              <span className="font-black tracking-widest text-base sm:text-lg text-white font-mono whitespace-nowrap leading-none">APERTURE</span>
-              <span className="bg-blue-500/10 text-blue-300 border border-blue-500/30 text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wider flex items-center gap-1 font-mono whitespace-nowrap">
-                <Flame className="w-3 h-3 text-blue-400 fill-blue-400" /> RFID UHF
+              <span className="font-black tracking-tight text-base sm:text-lg text-white font-sans whitespace-nowrap leading-none">
+                Aperature Asset Tracking
+              </span>
+              <span className="bg-amber-400/20 text-amber-300 border border-amber-400/30 text-[9px] font-bold px-1.5 py-0.2 rounded uppercase tracking-wider font-mono whitespace-nowrap hidden sm:inline-block">
+                IoT Enterprise
               </span>
             </div>
-            <span className="text-[10px] text-slate-400 font-medium tracking-normal text-left whitespace-nowrap mt-0.5">
-              Enterprise Asset Intelligence
+            <span className="text-[10px] text-slate-400 font-medium tracking-normal text-left whitespace-nowrap mt-0.5 hidden sm:block">
+              Real-Time Construction Site Asset Tracking & Management
             </span>
           </div>
- 
+
           {/* Site Context Selector */}
-          <div className="hidden md:flex items-center gap-2 bg-slate-900 border border-slate-800/80 rounded-xl px-3 py-1.5 shrink-0 ml-2 shadow-2xs">
-            <Building2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+          <div className="hidden xl:flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 shrink-0 ml-1">
+            <Building2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
             <select
               value={selectedSiteId}
               onChange={(e) => onSelectSite(e.target.value)}
-              className="bg-transparent text-xs font-bold text-slate-200 focus:outline-none cursor-pointer truncate max-w-[140px] lg:max-w-[180px]"
+              className="bg-transparent text-xs font-semibold text-slate-200 focus:outline-none cursor-pointer"
             >
-              <option value="ALL" className="bg-slate-950 text-white font-semibold">All Sites (Multi-Site)</option>
+              <option value="ALL" className="bg-slate-900 text-white">All Sites ({(sites || []).length})</option>
               {(sites || []).map(s => (
-                <option key={s.id} value={s.id} className="bg-slate-950 text-white font-semibold">
-                  {s.name} ({s.code})
+                <option key={s.id} value={s.id} className="bg-slate-900 text-white">
+                  {s.name}
                 </option>
               ))}
             </select>
           </div>
-
-          {/* Time Zone Selector Dropdown in Navbar */}
-          <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800/80 rounded-xl px-2.5 py-1.5 shrink-0 shadow-2xs">
-            <Globe className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            <span className="hidden xl:inline text-[11px] font-mono font-medium text-slate-400">TZ:</span>
-            <select
-              value={currentTimezone || 'UTC'}
-              onChange={(e) => onChangeTimezone && onChangeTimezone(e.target.value)}
-              className="bg-transparent text-xs font-mono font-bold text-amber-300 focus:outline-none cursor-pointer pr-1"
-              title="Global Display Timezone"
-            >
-              <option value="UTC" className="bg-slate-950 text-white">UTC</option>
-              <option value="LOCAL" className="bg-slate-950 text-white">Local</option>
-              <option value="EST" className="bg-slate-950 text-white">EST (UTC-4)</option>
-              <option value="CST" className="bg-slate-950 text-white">CST (UTC-5)</option>
-              <option value="MST" className="bg-slate-950 text-white">MST (UTC-6)</option>
-              <option value="PST" className="bg-slate-950 text-white">PST (UTC-7)</option>
-              <option value="GMT" className="bg-slate-950 text-white">GMT (UTC+0)</option>
-              <option value="CET" className="bg-slate-950 text-white">CET (UTC+1)</option>
-              <option value="PKT" className="bg-slate-950 text-white">PKT (UTC+5)</option>
-              <option value="IST" className="bg-slate-950 text-white">IST (UTC+5:30)</option>
-              <option value="JST" className="bg-slate-950 text-white">JST (UTC+9)</option>
-              <option value="AEST" className="bg-slate-950 text-white">AEST (UTC+10)</option>
-            </select>
-          </div>
         </div>
 
-        {/* Right: Clean, Essential Actions & Status */}
-        <div className="flex items-center gap-2.5 shrink-0 ml-auto">
-
-          {/* Backend API Connection Badge & Quick Refresh */}
-          <div className="flex items-center gap-1 bg-slate-800/90 border border-slate-700/80 p-1 rounded-xl shrink-0">
-            <div 
-              className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-mono font-medium border transition-all whitespace-nowrap ${
-                isFirestoreOnline
-                  ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700/60'
-                  : 'bg-amber-950/80 text-amber-300 border-amber-700/60'
-              }`}
-              title={isFirestoreOnline ? 'Live API Connected' : 'Working in Offline Mode'}
-            >
-              <span className="relative flex h-2 w-2 shrink-0">
-                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${isFirestoreOnline ? 'bg-emerald-400' : 'bg-amber-400'} opacity-75`}></span>
-                <span className={`relative inline-flex rounded-full h-2 w-2 ${isFirestoreOnline ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
-              </span>
-              <Database className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <span className="hidden sm:inline">{isFirestoreOnline ? 'API Live' : 'Offline'}</span>
-            </div>
-
-            {onManualSync && (
-              <button
-                onClick={onManualSync}
-                disabled={isSyncing}
-                className="flex items-center gap-1 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-semibold text-xs px-2 py-1 rounded-lg transition-all shadow-xs disabled:opacity-50 shrink-0 whitespace-nowrap"
-                title={lastSyncedAt ? `Refresh Live API (Last: ${lastSyncedAt})` : 'Refresh Live API data'}
+        {/* Middle: Global Search Bar (Section 3 Requirement) */}
+        <div ref={searchRef} className="relative flex-1 max-w-md hidden md:block">
+          <div className="relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Search assets, equipment, RFID tags, serials, sites..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setSearchOpen(true);
+              }}
+              onFocus={() => setSearchOpen(true)}
+              className="w-full pl-9 pr-8 py-1.5 rounded-xl text-xs bg-slate-900 border border-slate-800 text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500/50 transition-all"
+            />
+            {searchQuery && (
+              <button 
+                onClick={() => { setSearchQuery(''); setSearchOpen(false); }}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
               >
-                <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
-                <span className="hidden md:inline">{isSyncing ? 'Refreshing' : 'Refresh'}</span>
+                <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
 
-          {/* Handheld Field Scanner Quick Button */}
+          {/* Global Search Results Dropdown */}
+          {searchOpen && searchResults.length > 0 && (
+            <div className="absolute top-full left-0 right-0 mt-1.5 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl overflow-hidden z-50 text-xs divide-y divide-slate-800/60">
+              <div className="px-3 py-1.5 bg-slate-950 text-[10px] font-mono text-slate-400 font-bold uppercase">
+                Matching Assets ({searchResults.length})
+              </div>
+              {searchResults.map(a => (
+                <button
+                  key={a.id}
+                  onClick={() => {
+                    if (onSelectAsset) onSelectAsset(a);
+                    setSearchOpen(false);
+                    setSearchQuery('');
+                  }}
+                  className="w-full text-left px-3 py-2 hover:bg-slate-800/80 transition-colors flex items-center justify-between gap-2"
+                >
+                  <div className="flex items-center gap-2.5 truncate">
+                    <img src={a.photoUrl} alt="" className="w-7 h-7 rounded-lg object-cover border border-slate-700 shrink-0" />
+                    <div className="truncate">
+                      <div className="font-bold text-slate-200 truncate">{a.name}</div>
+                      <div className="text-[10px] text-slate-400 font-mono truncate">
+                        {a.id} • {a.siteName} ({a.zoneName})
+                      </div>
+                    </div>
+                  </div>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono shrink-0 ${
+                    a.status === 'Active' || a.status === 'In Zone'
+                      ? 'bg-emerald-500/20 text-emerald-300'
+                      : a.status === 'Maintenance'
+                      ? 'bg-amber-500/20 text-amber-300'
+                      : 'bg-blue-500/20 text-blue-300'
+                  }`}>
+                    {a.status}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Right: Real API / Hardware Live Status + Alerts + User */}
+        <div className="flex items-center gap-2">
+          
+          {/* Live Hardware & API Connection Status Indicator */}
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={onOpenHardwareDrawer}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-medium transition-colors ${
+                apiConnectionStatus === 'connected'
+                  ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/50'
+                  : apiConnectionStatus === 'no_data'
+                  ? 'bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-850'
+                  : 'bg-rose-950/40 border-rose-500/40 text-rose-300 hover:bg-rose-900/50'
+              }`}
+              title="Hardware Gateway & API Connection Status"
+            >
+              <span className="relative flex h-2 w-2">
+                {apiConnectionStatus === 'connected' && (
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                )}
+                <span className={`relative inline-flex rounded-full h-2 w-2 ${
+                  apiConnectionStatus === 'connected'
+                    ? 'bg-emerald-500'
+                    : apiConnectionStatus === 'no_data'
+                    ? 'bg-amber-400'
+                    : 'bg-rose-500'
+                }`}></span>
+              </span>
+              <span className="font-mono text-[10px] font-bold uppercase tracking-wider">
+                {apiStatusMessage || (apiConnectionStatus === 'connected' ? 'API Connected' : 'API not connected.')}
+              </span>
+            </button>
+          </div>
+
+          {/* Manual Refresh / Sync Button */}
+          {onManualSync && (
+            <button
+              onClick={onManualSync}
+              disabled={isSyncing}
+              className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white transition-colors disabled:opacity-50"
+              title="Fetch latest updates from database & API"
+            >
+              <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin text-amber-400' : ''}`} />
+            </button>
+          )}
+
+          {/* Quick QR Scanner Link */}
           <button
             onClick={onOpenMobileView}
-            className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold px-2.5 py-1.5 rounded-xl transition-colors shrink-0 whitespace-nowrap"
-            title="Open Mobile Field Scanner Simulator"
+            className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs font-medium text-slate-200 transition-colors"
+            title="Mobile QR Scanner"
           >
-            <Smartphone className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-            <span className="hidden lg:inline">Scanner</span>
+            <QrCode className="w-3.5 h-3.5 text-amber-400" />
+            <span className="hidden lg:inline text-[11px]">QR Scan</span>
           </button>
 
-          {/* Active Alerts Bell Button */}
+          {/* Hardware Telemetry Drawer Toggle */}
+          <button
+            onClick={onOpenHardwareDrawer}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs font-medium text-slate-200 transition-colors"
+            title="IoT Gateways & Readers"
+          >
+            <Cpu className="w-3.5 h-3.5 text-blue-400" />
+            <span className="hidden lg:inline text-[11px]">Hardware</span>
+          </button>
+
+          {/* Alerts Bell */}
           <button
             onClick={onOpenAlertsModal}
-            className="relative p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl border border-slate-700 transition-colors shrink-0"
-            title="View Active System Alerts"
+            className="relative p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white transition-colors"
+            title="Active Alerts"
           >
             <Bell className="w-4 h-4" />
             {unresolvedAlerts.length > 0 && (
-              <span className={`absolute -top-1 -right-1 text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center text-white ${
-                criticalCount > 0 ? 'bg-red-600 animate-bounce' : 'bg-blue-500'
+              <span className={`absolute -top-1 -right-1 text-[9px] font-bold font-mono px-1.5 py-0.2 rounded-full text-white ${
+                criticalCount > 0 ? 'bg-rose-600 animate-pulse' : 'bg-amber-600'
               }`}>
                 {unresolvedAlerts.length}
               </span>
             )}
           </button>
 
-          {/* User Persona & Role Switcher */}
-          <div className="relative group shrink-0">
-            <button 
-              onClick={() => setUserDropdownOpen(prev => !prev)}
-              className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl px-2 py-1.5 transition-colors cursor-pointer"
-              title="Switch user role persona"
+          {/* User Persona / RBAC Switcher Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setUserDropdownOpen(!userDropdownOpen)}
+              className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 transition-colors text-left"
             >
               <img
-                src={currentUser.avatarUrl}
-                alt={currentUser.name}
-                className="w-5 h-5 rounded-full object-cover border border-blue-400 shrink-0"
+                src={currentUser?.avatarUrl || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150'}
+                alt={currentUser?.name}
+                className="w-6 h-6 rounded-lg object-cover ring-1 ring-amber-400/50 shrink-0"
               />
-              <span className="text-xs font-semibold text-slate-200 hidden md:inline whitespace-nowrap">{currentUser.name}</span>
+              <div className="hidden sm:block text-left">
+                <div className="text-xs font-bold text-slate-200 truncate max-w-[110px] leading-tight">
+                  {currentUser?.name || 'Admin User'}
+                </div>
+                <div className="text-[10px] text-amber-400 font-mono truncate max-w-[110px] leading-tight">
+                  {currentUser?.role || 'Project Manager'}
+                </div>
+              </div>
+              <ChevronDown className="w-3 h-3 text-slate-400" />
             </button>
 
-            {/* Dropdown menu */}
-            <div className={`absolute right-0 top-full mt-1 w-60 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl py-1 z-50 ${userDropdownOpen ? 'block' : 'hidden group-hover:block'}`}>
-              {onNavigateTab && (
-                <div className="p-1.5 border-b border-slate-800">
-                  <button
-                    onClick={() => {
-                      setUserDropdownOpen(false);
-                      onNavigateTab('users');
-                    }}
-                    className="w-full text-left px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold flex items-center justify-between transition-colors shadow-xs"
-                  >
-                    <span className="flex items-center gap-2">
-                      <UserCheck className="w-4 h-4" />
-                      User Portal & Account
-                    </span>
-                    <ExternalLink className="w-3 h-3 text-blue-200" />
-                  </button>
+            {userDropdownOpen && (
+              <div className="absolute right-0 mt-2 w-64 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl py-2 z-50 text-xs">
+                <div className="px-3 py-2 border-b border-slate-800">
+                  <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">Logged In As</p>
+                  <p className="font-bold text-white text-sm mt-0.5">{currentUser?.name}</p>
+                  <p className="text-slate-400 text-[11px] truncate">{currentUser?.email}</p>
+                  <span className="inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded bg-amber-400/10 text-amber-300 border border-amber-400/30">
+                    Role: {currentUser?.role}
+                  </span>
                 </div>
-              )}
-              <div className="px-3 py-1.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wider font-mono">
-                Quick Persona Switcher
-              </div>
-              {(allUsers || []).map(u => (
-                <button
-                  key={u.id}
-                  onClick={() => {
-                    onSwitchUserRole(u);
-                    setUserDropdownOpen(false);
-                  }}
-                  className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-slate-800 transition-colors ${
-                    u.id === currentUser.id ? 'bg-blue-900/60 text-blue-200 font-bold' : 'text-slate-300'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <img src={u.avatarUrl} className="w-5 h-5 rounded-full object-cover shrink-0" />
-                    <div>
-                      <p className="leading-none">{u.name}</p>
-                      <p className="text-[10px] text-slate-400 leading-tight">{u.role}</p>
-                    </div>
-                  </div>
-                  {u.id === currentUser.id && <UserCheck className="w-3.5 h-3.5 text-blue-400 shrink-0" />}
-                </button>
-              ))}
 
-              {onLogout && (
-                <div className="p-1 border-t border-slate-800 mt-1">
-                  <button
-                    onClick={() => {
-                      setUserDropdownOpen(false);
-                      onLogout();
-                    }}
-                    className="w-full text-left px-3 py-2 text-xs text-red-400 hover:bg-red-950/60 hover:text-red-300 rounded-lg flex items-center justify-between font-bold transition-colors cursor-pointer"
-                  >
-                    <span className="flex items-center gap-2">
-                      <LogOut className="w-3.5 h-3.5" />
-                      Sign Out
-                    </span>
-                    <span className="text-[10px] font-mono opacity-60">Session</span>
-                  </button>
+                <div className="px-3 py-1.5 text-[10px] font-mono uppercase text-slate-400 font-bold">
+                  Switch Role / Persona (Preview)
                 </div>
-              )}
-            </div>
+
+                <div className="max-h-48 overflow-y-auto px-1 space-y-0.5">
+                  {(allUsers || []).map((u) => (
+                    <button
+                      key={u.id}
+                      onClick={() => {
+                        onSwitchUserRole(u);
+                        setUserDropdownOpen(false);
+                      }}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs transition-colors ${
+                        u.id === currentUser?.id ? 'bg-amber-400/10 text-amber-300 font-bold' : 'text-slate-300 hover:bg-slate-800'
+                      }`}
+                    >
+                      <div className="truncate">
+                        <span className="block truncate">{u.name}</span>
+                        <span className="text-[10px] text-slate-400 font-mono block truncate">{u.role}</span>
+                      </div>
+                      {u.id === currentUser?.id && <CheckCircle2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                    </button>
+                  ))}
+                </div>
+
+                {onNavigateTab && (
+                  <div className="pt-2 border-t border-slate-800 px-2 space-y-1">
+                    <button
+                      onClick={() => {
+                        onNavigateTab('users_roles');
+                        setUserDropdownOpen(false);
+                      }}
+                      className="w-full text-left px-2.5 py-1.5 rounded-lg text-slate-300 hover:bg-slate-800 flex items-center gap-2"
+                    >
+                      <Shield className="w-3.5 h-3.5 text-blue-400" />
+                      <span>Manage Users & Roles (RBAC)</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
         </div>

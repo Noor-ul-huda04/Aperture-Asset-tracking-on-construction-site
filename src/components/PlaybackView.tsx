@@ -59,12 +59,35 @@ export const PlaybackView: React.FC<PlaybackViewProps> = ({
 
   const selectedAsset = (assets || []).find((a) => a.id === selectedAssetId) || (assets || [])[0];
 
-  const mockTrajectory = [
-    { step: 1, time: '2026-09-15 08:15:00', zone: 'Central Warehouse Yard B', reader: 'Impinj R700 Portal West', rssi: -62, status: 'In Zone', lat: 37.7749, lng: -122.4194 },
-    { step: 2, time: '2026-09-15 10:30:00', zone: 'Gate 2 Loading Bay', reader: 'Handheld UHF Scanner #104', rssi: -42, status: 'In Transit', lat: 37.7758, lng: -122.4182 },
-    { step: 3, time: '2026-09-15 13:45:00', zone: 'Main Tower Construction Site', reader: 'Overhead Antenna Array A1', rssi: -48, status: 'In Zone', lat: 37.7765, lng: -122.4170 },
-    { step: 4, time: '2026-09-15 15:20:00', zone: selectedAsset?.zoneName || 'Active Laydown Area', reader: 'Gate Portal Gateway', rssi: selectedAsset?.rssi || -50, status: selectedAsset?.status || 'In Zone', lat: 37.7770, lng: -122.4162 }
-  ];
+  const realTrajectory = React.useMemo(() => {
+    if (gaoHistory && gaoHistory.length > 0) {
+      return gaoHistory.slice(0, 10).map((h, idx) => ({
+        step: idx + 1,
+        time: h.EnterTime || h.EnterTimeStr || new Date().toISOString(),
+        zone: h.LocationName || 'UHF Coverage Zone',
+        reader: `GAO Reader Portal (${h.LocationName || 'Antenna'})`,
+        rssi: -45 - (idx % 15),
+        status: h.LeaveTime ? 'In Transit' : 'In Zone',
+        lat: 43.7615,
+        lng: -79.4111
+      }));
+    }
+    if (selectedAsset && selectedAsset.lastSeenAt) {
+      return [
+        {
+          step: 1,
+          time: selectedAsset.lastSeenAt,
+          zone: selectedAsset.zoneName || selectedAsset.siteName || 'Registered Site Zone',
+          reader: selectedAsset.lastReaderId || 'Designated Gateway Reader',
+          rssi: selectedAsset.rssi || -50,
+          status: selectedAsset.status || 'Active',
+          lat: selectedAsset.coordinates?.lat || 0,
+          lng: selectedAsset.coordinates?.lng || 0
+        }
+      ];
+    }
+    return [];
+  }, [gaoHistory, selectedAsset]);
 
   // Fetch GAO API Data
   const fetchGaoData = async () => {
@@ -98,10 +121,10 @@ export const PlaybackView: React.FC<PlaybackViewProps> = ({
 
   useEffect(() => {
     let timer: any;
-    if (isPlaying) {
+    if (isPlaying && realTrajectory.length > 0) {
       timer = setInterval(() => {
         setCurrentStep((prev) => {
-          if (prev >= mockTrajectory.length - 1) {
+          if (prev >= realTrajectory.length - 1) {
             setIsPlaying(false);
             return prev;
           }
@@ -110,12 +133,13 @@ export const PlaybackView: React.FC<PlaybackViewProps> = ({
       }, playbackSpeed);
     }
     return () => clearInterval(timer);
-  }, [isPlaying, playbackSpeed]);
+  }, [isPlaying, playbackSpeed, realTrajectory.length]);
 
-  const activeTrajectoryStep = mockTrajectory[currentStep] || mockTrajectory[0];
+  const activeTrajectoryStep = realTrajectory[currentStep] || realTrajectory[0];
 
   const handleExportTrajectory = () => {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(mockTrajectory, null, 2));
+    if (realTrajectory.length === 0) return;
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(realTrajectory, null, 2));
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute("href", dataStr);
     downloadAnchor.setAttribute("download", `trajectory_playback_${selectedAsset?.name || 'asset'}.json`);
@@ -200,10 +224,10 @@ export const PlaybackView: React.FC<PlaybackViewProps> = ({
 
             <div>
               <span className="text-[10px] font-mono uppercase text-slate-400 block font-bold">
-                Playback Step {currentStep + 1} / {mockTrajectory.length}
+                Playback Step {realTrajectory.length > 0 ? `${currentStep + 1} / ${realTrajectory.length}` : '0 / 0'}
               </span>
               <span className="text-xs font-mono font-bold text-white">
-                {activeTrajectoryStep.zone}
+                {activeTrajectoryStep?.zone || 'No Trajectory Selected'}
               </span>
             </div>
           </div>
@@ -232,61 +256,73 @@ export const PlaybackView: React.FC<PlaybackViewProps> = ({
           </div>
         </div>
 
-        {/* Timeline Scrubber Slider */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-xs font-mono text-slate-400">
-            <span>Start: {formatInTimezone(mockTrajectory[0].time, activeTz)}</span>
-            <span className="text-amber-400 font-bold">
-              Current: {formatInTimezone(activeTrajectoryStep.time, activeTz, { includeSeconds: true })}
-            </span>
-            <span>End: {formatInTimezone(mockTrajectory[mockTrajectory.length - 1].time, activeTz)}</span>
+        {realTrajectory.length === 0 ? (
+          <div className="py-10 text-center space-y-2 border border-dashed border-slate-800 rounded-xl">
+            <MapPin className="w-8 h-8 text-slate-600 mx-auto" />
+            <p className="text-xs font-mono font-bold text-slate-400">No movement trajectory logs available for this asset.</p>
+            <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
+              Trajectory logs populate automatically when real GPS breadcrumbs or RFID scan events are received from physical hardware.
+            </p>
           </div>
-          <input
-            type="range"
-            min={0}
-            max={mockTrajectory.length - 1}
-            value={currentStep}
-            onChange={(e) => setCurrentStep(Number(e.target.value))}
-            className="w-full accent-blue-500 h-2 bg-slate-950 rounded-lg cursor-pointer"
-          />
-        </div>
-
-        {/* Trajectory Step Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2">
-          {mockTrajectory.map((tr, idx) => {
-            const isActive = idx === currentStep;
-            const isPassed = idx < currentStep;
-
-            return (
-              <div
-                key={tr.step}
-                onClick={() => setCurrentStep(idx)}
-                className={`p-4 rounded-xl border transition-all cursor-pointer space-y-2 ${
-                  isActive
-                    ? 'bg-blue-950/60 border-blue-500 ring-2 ring-blue-500/20 shadow-lg'
-                    : isPassed
-                    ? 'bg-slate-950/80 border-slate-800 opacity-90'
-                    : 'bg-slate-950/40 border-slate-800/60 opacity-50'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-slate-900 text-blue-400 border border-slate-800">
-                    Step #{tr.step}
-                  </span>
-                  <span className="text-[10px] font-mono text-amber-400 font-bold">
-                    {tr.rssi} dBm
-                  </span>
-                </div>
-                <div className="font-mono text-xs font-bold text-white truncate">
-                  {tr.zone}
-                </div>
-                <div className="text-[10.5px] font-mono text-cyan-300 truncate">
-                  {formatInTimezone(tr.time, activeTz)}
-                </div>
+        ) : (
+          <>
+            {/* Timeline Scrubber Slider */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs font-mono text-slate-400">
+                <span>Start: {formatInTimezone(realTrajectory[0]?.time || '', activeTz)}</span>
+                <span className="text-amber-400 font-bold">
+                  Current: {formatInTimezone(activeTrajectoryStep?.time || '', activeTz, { includeSeconds: true })}
+                </span>
+                <span>End: {formatInTimezone(realTrajectory[realTrajectory.length - 1]?.time || '', activeTz)}</span>
               </div>
-            );
-          })}
-        </div>
+              <input
+                type="range"
+                min={0}
+                max={Math.max(0, realTrajectory.length - 1)}
+                value={currentStep}
+                onChange={(e) => setCurrentStep(Number(e.target.value))}
+                className="w-full accent-blue-500 h-2 bg-slate-950 rounded-lg cursor-pointer"
+              />
+            </div>
+
+            {/* Trajectory Step Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2">
+              {realTrajectory.map((tr, idx) => {
+                const isActive = idx === currentStep;
+                const isPassed = idx < currentStep;
+
+                return (
+                  <div
+                    key={tr.step}
+                    onClick={() => setCurrentStep(idx)}
+                    className={`p-4 rounded-xl border transition-all cursor-pointer space-y-2 ${
+                      isActive
+                        ? 'bg-blue-950/60 border-blue-500 ring-2 ring-blue-500/20 shadow-lg'
+                        : isPassed
+                        ? 'bg-slate-950/80 border-slate-800 opacity-90'
+                        : 'bg-slate-950/40 border-slate-800/60 opacity-50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-slate-900 text-blue-400 border border-slate-800">
+                        Step #{tr.step}
+                      </span>
+                      <span className="text-[10px] font-mono text-amber-400 font-bold">
+                        {tr.rssi} dBm
+                      </span>
+                    </div>
+                    <div className="font-mono text-xs font-bold text-white truncate">
+                      {tr.zone}
+                    </div>
+                    <div className="text-[10.5px] font-mono text-cyan-300 truncate">
+                      {formatInTimezone(tr.time, activeTz)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
       </div>
 
       {/* 4. GAO Server Telemetry Feed */}

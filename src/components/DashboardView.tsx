@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { 
-  DollarSign, 
   Boxes, 
   ArrowLeftRight, 
   ShieldAlert, 
@@ -22,7 +21,17 @@ import {
   LayoutDashboard,
   ArrowRight,
   Sparkles,
-  Zap
+  Zap,
+  MapPin,
+  AlertOctagon,
+  AlertCircle,
+  Info,
+  Truck,
+  Compass,
+  FileCheck,
+  Building2,
+  RefreshCw,
+  Eye
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
@@ -35,11 +44,9 @@ import {
   YAxis, 
   Tooltip, 
   CartesianGrid,
-  Legend,
   ReferenceLine
 } from 'recharts';
 import { Asset, Alert, ReadEvent, Site, Checkout } from '../types';
-import { formatInTimezone } from '../utils/timezone';
 
 interface DashboardViewProps {
   assets: Asset[];
@@ -55,505 +62,407 @@ interface DashboardViewProps {
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
-  assets,
-  alerts,
-  readEvents,
-  sites,
-  checkouts,
+  assets = [],
+  alerts = [],
+  readEvents = [],
+  sites = [],
+  checkouts = [],
   onNavigateTab,
   onOpenAssetDetail,
   onOpenAlertsModal,
   currentTimezone = 'UTC',
   onChangeTimezone
 }) => {
-  const totalValue = (assets || []).reduce((sum, a) => sum + (a.cost || 125000), 0);
-  const checkedOutCount = (assets || []).filter(a => a.status === 'Checked Out' || a.status === 'CHECKED_OUT' || a.status === 'IN_USE').length;
-  const inZoneCount = (assets || []).filter(a => a.status === 'In Zone' || a.status === 'ACTIVE' || a.status === 'AVAILABLE').length;
-  const missingCount = (assets || []).filter(a => a.status === 'Missing' || a.status === 'LOST').length;
-  const maintCount = (assets || []).filter(a => a.status === 'Under Maintenance' || a.status === 'MAINTENANCE' || a.status === 'PENDING').length;
-  const totalAssets = (assets || []).length;
+  const safeAssets = assets || [];
+  const safeAlerts = alerts || [];
+  const safeReadEvents = readEvents || [];
+  const safeSites = sites || [];
+  const safeCheckouts = checkouts || [];
 
-  const unresolvedAlerts = (alerts || []).filter(a => !a.resolved && a.status !== 'RESOLVED');
-  const criticalAlerts = unresolvedAlerts.filter(a => a.severity === 'CRITICAL' || a.severity === 'HIGH');
+  // Top 8 KPIs required in Section 3
+  const totalAssetsCount = safeAssets.length;
+  const activeCount = safeAssets.filter(a => a.status === 'Active' || a.status === 'In Zone').length;
+  const idleCount = safeAssets.filter(a => a.status === 'Idle').length;
+  const maintenanceCount = safeAssets.filter(a => a.status === 'Under Maintenance').length;
+  const inTransitCount = safeAssets.filter(a => a.status === 'In Transit').length;
+  const offSiteCount = safeAssets.filter(a => a.status === 'Off-Site' || a.status === 'Missing').length;
+  const openAlertsCount = safeAlerts.filter(a => !a.resolved && a.status !== 'Resolved').length;
+  const maintenanceDueCount = safeAssets.filter(a => {
+    if (!a.nextServiceDueHours || !a.operatingHours) return false;
+    return (a.nextServiceDueHours - a.operatingHours) <= 100;
+  }).length;
+
+  // Alerts breakdown
+  const criticalAlerts = safeAlerts.filter(a => a.severity === 'Critical');
+  const highAlerts = safeAlerts.filter(a => a.severity === 'High');
+  const mediumAlerts = safeAlerts.filter(a => a.severity === 'Medium');
+  const lowAlerts = safeAlerts.filter(a => a.severity === 'Low');
 
   // Chart data: Status breakdown
   const statusData = [
-    { name: 'In Zone', value: inZoneCount || (totalAssets > 0 ? totalAssets - checkedOutCount - maintCount - missingCount : 0), color: '#10b981' },
-    { name: 'Checked Out', value: checkedOutCount, color: '#3b82f6' },
-    { name: 'Under Maintenance', value: maintCount, color: '#f59e0b' },
-    { name: 'Missing / Flagged', value: missingCount, color: '#ef4444' }
-  ];
+    { name: 'Active / On-Site', value: activeCount, color: '#10b981' },
+    { name: 'Idle Machinery', value: idleCount, color: '#f59e0b' },
+    { name: 'In Transit', value: inTransitCount, color: '#3b82f6' },
+    { name: 'In Maintenance', value: maintenanceCount, color: '#8b5cf6' },
+    { name: 'Off-Site / Flagged', value: offSiteCount, color: '#f43f5e' }
+  ].filter(d => d.value > 0);
 
-  // Category breakdown data
-  const categoryMap: Record<string, number> = {};
-  (assets || []).forEach(a => {
-    const cat = a.category || 'General Equipment';
-    categoryMap[cat] = (categoryMap[cat] || 0) + 1;
-  });
-  const categoryData = Object.keys(categoryMap).map(cat => ({
-    name: cat,
-    count: categoryMap[cat]
-  }));
-
-  // Site Asset Utilization data for recharts
-  const siteUtilizationData = (sites || []).map(s => {
-    const siteAssets = (assets || []).filter(a => a.siteId === s.id || a.siteName === s.name);
-    const total = siteAssets.length;
-    const checkedOut = siteAssets.filter(a => a.status === 'Checked Out' || a.status === 'CHECKED_OUT' || a.status === 'IN_USE').length;
-    const inZone = siteAssets.filter(a => a.status === 'In Zone' || a.status === 'ACTIVE' || a.status === 'AVAILABLE').length;
-    const maint = siteAssets.filter(a => a.status === 'Under Maintenance' || a.status === 'MAINTENANCE' || a.status === 'PENDING').length;
-    const missing = siteAssets.filter(a => a.status === 'Missing' || a.status === 'LOST').length;
-    const utilizationRate = total > 0 ? Math.round((checkedOut / total) * 100) : 50;
-
+  // Site asset data for chart
+  const siteChartData = safeSites.map(s => {
+    const siteAssets = safeAssets.filter(a => a.siteId === s.id);
+    const active = siteAssets.filter(a => a.status === 'Active' || a.status === 'In Zone').length;
+    const idle = siteAssets.filter(a => a.status === 'Idle').length;
     return {
-      name: s.name ? (s.name.length > 18 ? `${s.name.slice(0, 16)}...` : s.name) : 'Unnamed Site',
-      fullName: s.name || 'Unnamed Site',
-      code: s.code || s.id,
-      utilizationRate,
-      checkedOut,
-      inZone,
-      maint,
-      missing,
-      totalAssets: total
+      name: s.name.replace('Site ', ''),
+      fullName: s.name,
+      total: siteAssets.length,
+      active,
+      idle,
+      utilization: siteAssets.length > 0 ? Math.round((active / siteAssets.length) * 100) : 0
     };
   });
 
-  const avgUtilizationRate = siteUtilizationData.length > 0
-    ? Math.round(siteUtilizationData.reduce((acc, curr) => acc + curr.utilizationRate, 0) / siteUtilizationData.length)
-    : 0;
+  // Real Activities derived from real ReadEvents and Checkouts
+  const realActivities = [
+    ...safeReadEvents.slice(0, 10).map(e => ({
+      id: e.id,
+      text: `${e.assetName || e.epc} detected by ${e.readerName || 'Reader'} in ${e.zoneName || 'Zone'}`,
+      time: e.timestamp ? new Date(e.timestamp).toLocaleTimeString() : 'Just now',
+      type: 'SCAN',
+      assetId: e.assetId || e.epc,
+      badge: 'Portal Read'
+    })),
+    ...checkouts.slice(0, 10).map(c => ({
+      id: c.id,
+      text: `${c.assetName} checked out by ${c.workerName}`,
+      time: c.checkoutTime ? new Date(c.checkoutTime).toLocaleTimeString() : 'Recent',
+      type: 'CHECKOUT',
+      assetId: c.assetId,
+      badge: 'Custody Handover'
+    }))
+  ].slice(0, 6);
 
-  const CustomUtilizationTooltip = ({ active, payload }: any) => {
-    if (active && payload && payload.length) {
-      const data = payload[0].payload;
-      return (
-        <div className="bg-slate-900 border border-slate-700 p-3 rounded-xl shadow-xl text-white text-xs space-y-1.5">
-          <div className="flex items-center justify-between gap-3 border-b border-slate-800 pb-1.5">
-            <span className="font-bold text-slate-100">{data.fullName}</span>
-            <span className="font-mono text-[10px] px-1.5 py-0.5 bg-blue-900/80 text-blue-300 rounded border border-blue-700">
-              {data.code}
-            </span>
+  // STRICT EMPTY STATE: When no real operational data is available
+  if (assets.length === 0 && alerts.length === 0 && readEvents.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center space-y-4 shadow-xs">
+          <div className="w-16 h-16 rounded-2xl bg-slate-100 border border-slate-200 text-slate-400 mx-auto flex items-center justify-center">
+            <Boxes className="w-8 h-8 stroke-[1.5]" />
           </div>
-          <div className="font-mono text-[11px] space-y-1">
-            <div className="flex justify-between gap-4 text-blue-400 font-bold">
-              <span>Utilization Rate:</span>
-              <span>{data.utilizationRate}%</span>
-            </div>
-            <div className="flex justify-between gap-4 text-slate-300">
-              <span>Active Checked Out:</span>
-              <span className="font-bold">{data.checkedOut} / {data.totalAssets}</span>
-            </div>
-            <div className="flex justify-between gap-4 text-emerald-400">
-              <span>In Zone (Laydown Yard):</span>
-              <span>{data.inZone}</span>
-            </div>
-            {data.maint > 0 && (
-              <div className="flex justify-between gap-4 text-amber-400">
-                <span>Under Maintenance:</span>
-                <span>{data.maint}</span>
-              </div>
-            )}
-          </div>
-        </div>
-      );
-    }
-    return null;
-  };
-
-  return (
-    <div className="space-y-6">
-      {/* Top Banner Critical Notice if alerts exist */}
-      {criticalAlerts.length > 0 && (
-        <div className="bg-red-950/80 border border-red-600/60 rounded-xl p-4 flex items-center justify-between gap-4 text-red-200 shadow-lg shadow-red-950/50">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-red-600/30 rounded-lg text-red-400 animate-pulse">
-              <ShieldAlert className="w-6 h-6 stroke-[2.5]" />
-            </div>
-            <div>
-              <h3 className="font-bold text-sm text-red-100 flex items-center gap-2">
-                CRITICAL SECURITY ALERT DETECTED ({criticalAlerts.length})
-              </h3>
-              <p className="text-xs text-red-300/90 mt-0.5">
-                {criticalAlerts[0].message}
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onOpenAlertsModal}
-            className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white font-bold text-xs rounded-lg transition-colors shrink-0 flex items-center gap-1.5"
-          >
-            <span>Resolve Alerts</span>
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-
-      {/* KPI Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        
-        <div className="bg-white border border-slate-200/60 rounded-2xl p-5 flex items-center justify-between shadow-sm hover:shadow-md transition-shadow">
-          <div>
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Tracked Value</p>
-            <p className="text-3xl font-black text-slate-900 font-mono mt-1.5 leading-none">
-              ${((Number(totalValue) || 0) / 1000).toFixed(1)}k
-            </p>
-            <p className="text-xs text-blue-600 mt-2 flex items-center gap-1 font-semibold">
-              <TrendingUp className="w-3.5 h-3.5" />
-              <span>{totalAssets} Total Assets Tagged</span>
+          <div className="max-w-md mx-auto space-y-1">
+            <h3 className="text-base font-bold text-slate-900">No operational data available.</h3>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Aperature Asset Tracking requires operational records from real external APIs, GPS telematics, RFID/BLE portals, or authorized manual entries.
             </p>
           </div>
-          <div className="w-12 h-12 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shrink-0">
-            <DollarSign className="w-5 h-5 stroke-[2.2]" />
-          </div>
-        </div>
-
-        <div className="bg-white border border-slate-200/60 rounded-2xl p-5 flex items-center justify-between shadow-sm hover:shadow-md transition-shadow">
-          <div>
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Checked Out / Active</p>
-            <p className="text-3xl font-black text-blue-600 font-mono mt-1.5 leading-none">
-              {checkedOutCount}
-            </p>
-            <p className="text-xs text-slate-500 mt-2 font-medium">
-              <span className="font-bold text-slate-700">{Math.round((checkedOutCount / (totalAssets || 1)) * 100)}%</span> Current Utilization
-            </p>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-sky-50 border border-sky-100 flex items-center justify-center text-sky-600 shrink-0">
-            <ArrowLeftRight className="w-5 h-5 stroke-[2.2]" />
-          </div>
-        </div>
-
-        <div className="bg-white border border-slate-200/60 rounded-2xl p-5 flex items-center justify-between shadow-sm hover:shadow-md transition-shadow">
-          <div>
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Present In Laydown / Crib</p>
-            <p className="text-3xl font-black text-emerald-600 font-mono mt-1.5 leading-none">
-              {inZoneCount}
-            </p>
-            <p className="text-xs text-emerald-600 mt-2 font-semibold flex items-center gap-1">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>Verified RFID Portal</span>
-            </p>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shrink-0">
-            <Boxes className="w-5 h-5 stroke-[2.2]" />
-          </div>
-        </div>
-
-        <div className="bg-white border border-slate-200/60 rounded-2xl p-5 flex items-center justify-between shadow-sm hover:shadow-md transition-shadow">
-          <div>
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Missing / Loss Risk</p>
-            <p className={`text-3xl font-black font-mono mt-1.5 leading-none ${missingCount > 0 ? 'text-rose-600' : 'text-slate-700'}`}>
-              {missingCount}
-            </p>
-            <p className="text-xs text-slate-500 mt-2 font-medium">
-              {missingCount > 0 ? 'Zone audit recommended' : '0% Asset Loss Rate'}
-            </p>
-          </div>
-          <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
-            missingCount > 0 
-              ? 'bg-rose-50 border border-rose-100 text-rose-600 animate-pulse' 
-              : 'bg-slate-50 border border-slate-100 text-slate-400'
-          }`}>
-            <AlertTriangle className="w-5 h-5 stroke-[2.2]" />
-          </div>
-        </div>
-
-      </div>
-
-      {/* AI Behavioral Analytics & Reports Quick Launch Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        <div 
-          onClick={() => onNavigateTab('ai_behavior')}
-          className="bg-white hover:bg-slate-50/50 border border-slate-200/60 hover:border-blue-400/80 rounded-2xl p-5 cursor-pointer transition-all shadow-sm hover:shadow-md group flex items-center justify-between gap-4"
-        >
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-blue-50 text-blue-600 rounded-xl border border-blue-100 group-hover:scale-105 transition-transform shrink-0">
-              <BrainCircuit className="w-6 h-6 stroke-[2]" />
-            </div>
-            <div>
-              <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider block font-mono">
-                AI BEHAVIOR ENGINE
-              </span>
-              <h4 className="font-bold text-slate-900 text-sm mt-0.5 group-hover:text-blue-600 transition-colors">Analyze Event Stream Behavior</h4>
-              <p className="text-xs text-slate-500 mt-1 leading-relaxed">Detect zone-hopping, dwell time spikes, and anomaly threat scores using Gemini AI</p>
-            </div>
-          </div>
-          <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-blue-600 group-hover:translate-x-1 transition-all shrink-0" />
-        </div>
-
-        <div 
-          onClick={() => onNavigateTab('reports')}
-          className="bg-white hover:bg-slate-50/50 border border-slate-200/60 hover:border-emerald-400/80 rounded-2xl p-5 cursor-pointer transition-all shadow-sm hover:shadow-md group flex items-center justify-between gap-4"
-        >
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-100 group-hover:scale-105 transition-transform shrink-0">
-              <TrendingUp className="w-6 h-6 stroke-[2]" />
-            </div>
-            <div>
-              <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider block font-mono">
-                REPORTS & COST ANALYTICS
-              </span>
-              <h4 className="font-bold text-slate-900 text-sm mt-0.5 group-hover:text-emerald-600 transition-colors">Asset Utilization & TCO Metrics</h4>
-              <p className="text-xs text-slate-500 mt-1 leading-relaxed">Generate operational lifecycle reports and track total cost of ownership across sites</p>
-            </div>
-          </div>
-          <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-emerald-600 group-hover:translate-x-1 transition-all shrink-0" />
-        </div>
-      </div>
-
-      {/* Main Grid: Charts & Live Activity Stream */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-        {/* Status & Category Analytics Charts */}
-        <div className="lg:col-span-2 space-y-6">
-          
-          {/* Status Breakdown & Category Distribution */}
-          <div className="bg-white border border-slate-200/60 rounded-2xl p-5 space-y-4 shadow-sm">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <h2 className="font-bold text-base text-slate-900 flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-blue-600" />
-                  <span>Asset Distribution & Real-Time Analytics</span>
-                </h2>
-                <p className="text-xs text-slate-500">Live RFID status breakdown across all connected job sites</p>
-              </div>
-              <button
-                onClick={() => onNavigateTab('assets')}
-                className="text-xs text-blue-600 hover:text-blue-700 font-bold flex items-center gap-1 transition-colors"
-              >
-                <span>View All Assets</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
-              
-              {/* Pie Chart */}
-              <div className="h-56 w-full flex flex-col items-center justify-center relative min-h-[224px]">
-                <ResponsiveContainer width="100%" height={220} minWidth={100} minHeight={200} initialDimension={{ width: 300, height: 220 }}>
-                  <PieChart>
-                    <Pie
-                      data={statusData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={80}
-                      paddingAngle={4}
-                      dataKey="value"
-                    >
-                      {statusData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#ffffff', borderColor: '#cbd5e1', borderRadius: '12px', color: '#0f172a', fontSize: '11px', boxShadow: '0 4px 12px rgba(0, 0, 0, 0.05)' }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="absolute text-center">
-                  <span className="text-2xl font-black font-mono text-slate-900 block leading-none">{totalAssets}</span>
-                  <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider font-sans mt-0.5 block">Total Tags</span>
-                </div>
-              </div>
-
-              {/* Legend & Summary List */}
-              <div className="flex flex-col justify-center space-y-2.5">
-                {statusData.map((item) => (
-                  <div key={item.name} className="flex items-center justify-between p-3 rounded-xl bg-slate-50/50 border border-slate-200/40 hover:bg-slate-50 transition-colors">
-                    <div className="flex items-center gap-2.5">
-                      <span className="w-2.5 h-2.5 rounded-full ring-2 ring-white" style={{ backgroundColor: item.color }} />
-                      <span className="text-xs font-semibold text-slate-700">{item.name}</span>
-                    </div>
-                    <span className="text-xs font-bold font-mono text-slate-900 bg-white px-2 py-0.5 rounded-md border border-slate-200/50 shadow-2xs">{item.value}</span>
-                  </div>
-                ))}
-              </div>
-
-            </div>
-          </div>
-
-          {/* Site Asset Utilization Rate Chart (Recharts) */}
-          <div className="bg-white border border-slate-200/60 rounded-2xl p-5 space-y-4 shadow-sm">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
-              <div>
-                <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4 text-blue-600" />
-                  <span>Site Asset Utilization Percentages</span>
-                </h3>
-                <p className="text-xs text-slate-500">Active checked-out asset utilization rates per construction job site</p>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="text-right font-mono bg-blue-50/60 border border-blue-100/80 px-3.5 py-1.5 rounded-xl">
-                  <span className="text-[9px] text-slate-400 uppercase block font-sans font-bold tracking-wider">Fleet Average</span>
-                  <span className="text-sm font-black text-blue-700">{avgUtilizationRate}% Utilization</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="h-64 w-full pt-2 min-h-[256px]">
-              <ResponsiveContainer width="100%" height={250} minWidth={100} minHeight={200} initialDimension={{ width: 500, height: 250 }}>
-                <BarChart data={siteUtilizationData} margin={{ top: 10, right: 10, left: -15, bottom: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                  <XAxis 
-                    dataKey="name" 
-                    tick={{ fontSize: 10, fill: '#64748b', fontWeight: 500 }}
-                    interval={0}
-                    angle={-10}
-                    textAnchor="end"
-                  />
-                  <YAxis 
-                    unit="%" 
-                    domain={[0, 100]} 
-                    tick={{ fontSize: 10, fill: '#64748b', fontWeight: 500 }}
-                  />
-                  <Tooltip content={<CustomUtilizationTooltip />} />
-                  <ReferenceLine y={60} label={{ value: '60% Target', fill: '#059669', fontSize: 9, fontWeight: 'bold', position: 'insideTopRight' }} stroke="#059669" strokeDasharray="3 3" />
-                  <Bar 
-                    dataKey="utilizationRate" 
-                    name="Utilization Rate (%)" 
-                    fill="#3b82f6" 
-                    radius={[6, 6, 0, 0]} 
-                  >
-                    {siteUtilizationData.map((entry, index) => (
-                      <Cell 
-                        key={`cell-${index}`} 
-                        fill={entry.utilizationRate >= 60 ? '#1d4ed8' : entry.utilizationRate >= 40 ? '#0284c7' : '#f59e0b'} 
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-
-            <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between text-xs text-slate-500 gap-3">
-              <div className="flex items-center gap-4 text-[11px] font-mono">
-                <span className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-sm bg-blue-700 inline-block" />
-                  <span className="text-slate-600 font-semibold">High (&gt;60%)</span>
-                </span>
-                <span className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-sm bg-sky-600 inline-block" />
-                  <span className="text-slate-600 font-semibold">Moderate (40-60%)</span>
-                </span>
-                <span className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-sm bg-amber-500 inline-block" />
-                  <span className="text-slate-600 font-semibold">Low (&lt;40%)</span>
-                </span>
-              </div>
-              <button 
-                onClick={() => onNavigateTab('reports')}
-                className="text-blue-600 hover:text-blue-700 font-bold flex items-center gap-1 transition-colors"
-              >
-                <span>Detailed Utilization Reports</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-
-          {/* Site Overview List */}
-          <div className="bg-white border border-slate-200/60 rounded-2xl p-5 space-y-4 shadow-sm">
-            <h3 className="font-bold text-xs text-slate-400 uppercase tracking-widest flex items-center justify-between font-mono">
-              <span>Active Construction Sites ({(sites || []).length})</span>
-              <button onClick={() => onNavigateTab('tracking')} className="text-xs text-blue-600 hover:text-blue-700 font-bold transition-colors">
-                View Site Maps →
-              </button>
-            </h3>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {(sites || []).map(s => {
-                const siteAssets = (assets || []).filter(a => a.siteId === s.id);
-                const siteValue = siteAssets.reduce((sum, a) => sum + (a.cost || 125000), 0);
-                return (
-                  <div key={s.id} className="bg-slate-50/50 border border-slate-200/40 rounded-xl p-4 space-y-2 hover:border-blue-400/80 hover:bg-slate-50 transition-all shadow-2xs group">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-sm text-slate-800 group-hover:text-blue-700 transition-colors">{s.name}</span>
-                      <span className="text-[10px] font-mono px-1.5 py-0.5 bg-blue-50/80 text-blue-800 border border-blue-100/60 rounded font-bold">
-                        {s.code || s.id}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-400 truncate">{s.location || s.address || 'Active Site'}</p>
-                    <div className="pt-2 border-t border-slate-200/50 flex items-center justify-between text-xs">
-                      <span className="text-slate-500">Assets: <strong className="text-slate-800 font-bold font-mono">{siteAssets.length}</strong></span>
-                      <span className="text-slate-500">Value: <strong className="text-emerald-600 font-bold font-mono">${((Number(siteValue) || 0)/1000).toFixed(0)}k</strong></span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-        </div>
-
-        {/* Live RFID Event Feed Stream */}
-        <div className="bg-white border border-slate-200/60 rounded-2xl p-5 flex flex-col h-[520px] shadow-sm">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
-            <div className="flex items-center gap-2">
-              <Radio className="w-4 h-4 text-blue-600 animate-pulse" />
-              <h2 className="font-bold text-base text-slate-900">Real-Time RFID Read Stream</h2>
-            </div>
-            <span className="text-[10px] font-mono bg-blue-50/80 text-blue-800 border border-blue-100/60 px-2 py-1 rounded-md font-bold flex items-center gap-1.5 shadow-2xs">
-              <span className="relative flex h-1.5 w-1.5 shrink-0">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
-              </span>
-              860-960 MHz
-            </span>
-          </div>
-
-          <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-            {(readEvents || []).length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-slate-400 space-y-2">
-                <Radio className="w-6 h-6 animate-pulse text-slate-300" />
-                <p className="text-xs text-slate-400 text-center font-medium">Waiting for real-time gateway RFID reads...</p>
-              </div>
-            ) : (
-              (readEvents || []).slice(0, 15).map((evt: any) => {
-                const isBreach = evt.eventType === 'GEOFENCE_BREACH' || evt.type === 'GEOFENCE_BREACH';
-                return (
-                  <div 
-                    key={evt.id}
-                    className={`p-3.5 rounded-xl border text-xs space-y-1.5 transition-all shadow-2xs ${
-                      isBreach
-                        ? 'bg-rose-50/80 border-rose-200/80 text-rose-900 hover:border-rose-300'
-                        : 'bg-slate-50/40 border-slate-200/40 text-slate-800 hover:bg-slate-50 hover:border-blue-400/80 hover:shadow-xs'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-bold text-slate-800 truncate max-w-[170px]">
-                        {evt.assetName || evt.assetId || evt.tagId || 'RFID Tag Detected'}
-                      </span>
-                      <span className="text-[10px] font-mono font-medium text-slate-400 shrink-0">
-                        {evt.timestamp ? new Date(evt.timestamp).toLocaleTimeString() : 'N/A'}
-                      </span>
-                    </div>
-                    
-                    <div className="flex items-center justify-between text-[11px] text-slate-500">
-                      <span className="truncate font-medium">{evt.readerName || evt.readerId || 'Gate RFID Reader'}</span>
-                      <span className="font-mono text-blue-900 font-bold bg-blue-50/50 border border-blue-100/40 px-1.5 py-0.2 rounded">{evt.rssi ? `${evt.rssi} dBm` : '-42 dBm'}</span>
-                    </div>
-
-                    <div className="flex items-center justify-between text-[10px] font-mono pt-1.5 text-slate-400 border-t border-slate-200/50">
-                      <span className="truncate select-all">Tag: {evt.tagId || evt.epc || 'N/A'}</span>
-                      <span className="text-slate-600 font-semibold">{evt.location || evt.zoneName || evt.siteId || 'Active Zone'}</span>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          <div className="pt-3.5 border-t border-slate-100 mt-3 flex items-center justify-between text-xs text-slate-500">
-            <span className="font-mono text-[10px] text-slate-400">UHF RFID Engine v4.2</span>
+          <div className="pt-3 flex items-center justify-center gap-3 flex-wrap">
             <button
-              onClick={() => onNavigateTab('api-logs')}
-              className="text-blue-600 hover:text-blue-700 font-bold transition-colors cursor-pointer flex items-center gap-1"
+              onClick={() => onNavigateTab('assets')}
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow-xs transition-colors"
             >
-              <span>API Endpoint Log</span>
-              <ArrowRight className="w-3 h-3" />
+              + Register First Asset
+            </button>
+            <button
+              onClick={() => onNavigateTab('projects')}
+              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl transition-colors"
+            >
+              + Create Project
+            </button>
+            <button
+              onClick={() => onNavigateTab('hardware')}
+              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl transition-colors"
+            >
+              Configure Hardware Gateway
             </button>
           </div>
         </div>
+      </div>
+    );
+  }
 
+  return (
+    <div className="space-y-6">
+
+      {/* Top 8 KPI Cards Grid (Section 3 requirement) */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+        <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs text-left">
+          <span className="text-[9px] uppercase font-bold text-slate-400 block truncate">Total Assets</span>
+          <span className="text-2xl font-black text-slate-900 block mt-1">{totalAssetsCount}</span>
+          <span className="text-[10px] text-slate-500 font-medium">All fleets</span>
+        </div>
+
+        <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs text-left">
+          <span className="text-[9px] uppercase font-bold text-slate-400 block truncate">Active Assets</span>
+          <span className="text-2xl font-black text-emerald-600 block mt-1">{activeCount}</span>
+          <span className="text-[10px] text-emerald-700 font-medium">Operating on-site</span>
+        </div>
+
+        <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs text-left">
+          <span className="text-[9px] uppercase font-bold text-slate-400 block truncate">Idle Assets</span>
+          <span className="text-2xl font-black text-amber-600 block mt-1">{idleCount}</span>
+          <span className="text-[10px] text-amber-700 font-medium">&gt;4 hrs stationary</span>
+        </div>
+
+        <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs text-left">
+          <span className="text-[9px] uppercase font-bold text-slate-400 block truncate">In Maintenance</span>
+          <span className="text-2xl font-black text-purple-600 block mt-1">{maintenanceCount}</span>
+          <span className="text-[10px] text-purple-700 font-medium">Shop / Service</span>
+        </div>
+
+        <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs text-left">
+          <span className="text-[9px] uppercase font-bold text-slate-400 block truncate">In Transit</span>
+          <span className="text-2xl font-black text-blue-600 block mt-1">{inTransitCount}</span>
+          <span className="text-[10px] text-blue-700 font-medium">Between sites</span>
+        </div>
+
+        <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs text-left">
+          <span className="text-[9px] uppercase font-bold text-slate-400 block truncate">Off-Site / Lost</span>
+          <span className="text-2xl font-black text-rose-600 block mt-1">{offSiteCount}</span>
+          <span className="text-[10px] text-rose-700 font-medium">Outside bounds</span>
+        </div>
+
+        <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs text-left">
+          <span className="text-[9px] uppercase font-bold text-slate-400 block truncate">Open Alerts</span>
+          <span className="text-2xl font-black text-rose-700 block mt-1">{openAlertsCount}</span>
+          <span className="text-[10px] text-slate-500 font-medium">{criticalAlerts.length} Critical</span>
+        </div>
+
+        <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs text-left">
+          <span className="text-[9px] uppercase font-bold text-slate-400 block truncate">Maint. Due</span>
+          <span className="text-2xl font-black text-amber-700 block mt-1">{maintenanceDueCount}</span>
+          <span className="text-[10px] text-slate-500 font-medium">&lt;100 hrs left</span>
+        </div>
       </div>
 
+      {/* Fleet Distribution & Utilization Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Fleet Status Pie Chart */}
+        <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200 p-5 shadow-xs text-left space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <span className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg">
+                <PieChart className="w-4 h-4" />
+              </span>
+              <div>
+                <h3 className="text-sm font-black text-slate-900">Fleet Status Distribution</h3>
+                <p className="text-[11px] text-slate-500">Live equipment operational states</p>
+              </div>
+            </div>
+            <button
+              onClick={() => onNavigateTab('tracking')}
+              className="text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-lg transition-colors"
+            >
+              Live Map →
+            </button>
+          </div>
+
+          <div className="h-56 w-full flex items-center justify-center">
+            {statusData.length === 0 ? (
+              <div className="text-xs text-slate-400 font-mono">No asset status data recorded</div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={statusData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={50}
+                    outerRadius={80}
+                    paddingAngle={4}
+                    dataKey="value"
+                  >
+                    {statusData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#0f172a',
+                      borderRadius: '12px',
+                      border: 'none',
+                      color: '#ffffff',
+                      fontSize: '12px',
+                      fontFamily: 'monospace'
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100 text-xs">
+            {statusData.map((item) => (
+              <div key={item.name} className="flex items-center justify-between p-1.5 rounded-lg bg-slate-50">
+                <div className="flex items-center gap-1.5 truncate">
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                  <span className="text-[11px] text-slate-600 truncate">{item.name}</span>
+                </div>
+                <span className="font-mono font-bold text-slate-900 ml-2">{item.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Site Asset Allocation Bar Chart */}
+        <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-200 p-5 shadow-xs text-left space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <span className="p-1.5 bg-blue-50 text-blue-600 rounded-lg">
+                <Building2 className="w-4 h-4" />
+              </span>
+              <div>
+                <h3 className="text-sm font-black text-slate-900">Site Asset Deployment</h3>
+                <p className="text-[11px] text-slate-500">Active vs idle machinery per construction site</p>
+              </div>
+            </div>
+            <button
+              onClick={() => onNavigateTab('sites')}
+              className="text-xs font-bold text-slate-600 hover:text-slate-900"
+            >
+              All Sites →
+            </button>
+          </div>
+
+          <div className="h-56 w-full">
+            {siteChartData.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-xs text-slate-400 font-mono">
+                No site deployment data available
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={siteChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} />
+                  <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#0f172a',
+                      borderRadius: '12px',
+                      border: 'none',
+                      color: '#ffffff',
+                      fontSize: '12px',
+                      fontFamily: 'monospace'
+                    }}
+                  />
+                  <Bar dataKey="active" name="Active Assets" fill="#10b981" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="idle" name="Idle Assets" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px] text-slate-500 font-mono">
+            <div className="flex items-center gap-4">
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> Active Operating</span>
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-amber-500" /> Stationary / Idle</span>
+            </div>
+            <span>{safeSites.length} Construction Projects Monitored</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Two Column Layout: Recent Activity Feed & Alerts Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Recent Asset Activity Feed (Section 3 Requirement) */}
+        <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4 text-left">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <span className="p-1.5 bg-blue-50 text-blue-600 rounded-lg">
+                <Activity className="w-4 h-4" />
+              </span>
+              <h3 className="text-sm font-black text-slate-900">Recent Asset Field Activity</h3>
+            </div>
+            <button
+              onClick={() => onNavigateTab('movements')}
+              className="text-xs font-bold text-blue-600 hover:text-blue-700"
+            >
+              View Movements Log →
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            {realActivities.length === 0 ? (
+              <div className="py-8 text-center text-xs text-slate-400 font-mono">
+                No recent asset activity recorded.
+              </div>
+            ) : (
+              realActivities.map((act) => (
+                <div
+                  key={act.id}
+                  className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-start justify-between gap-3 text-xs hover:bg-slate-100/60 transition-colors"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-bold text-xs bg-slate-900 text-white px-2 py-0.5 rounded">
+                        {act.assetId}
+                      </span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
+                        {act.badge}
+                      </span>
+                    </div>
+                    <p className="font-semibold text-slate-800">{act.text}</p>
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-400 shrink-0 mt-0.5">
+                    {act.time}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Alerts Section with Distinct Severity Icons (Section 3 Requirement) */}
+        <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4 text-left">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <span className="p-1.5 bg-rose-50 text-rose-600 rounded-lg">
+                <ShieldAlert className="w-4 h-4" />
+              </span>
+              <h3 className="text-sm font-black text-slate-900">Active Fleet Alerts</h3>
+            </div>
+            <button
+              onClick={() => onNavigateTab('alerts')}
+              className="text-xs font-bold text-rose-600 hover:text-rose-700"
+            >
+              Open Alerts Center →
+            </button>
+          </div>
+
+          <div className="space-y-2.5">
+            {alerts.slice(0, 4).map((al) => {
+              const isCrit = al.severity === 'Critical';
+              const isHigh = al.severity === 'High';
+              const isMed = al.severity === 'Medium';
+
+              return (
+                <div
+                  key={al.id}
+                  className={`p-3 rounded-xl border text-xs space-y-1 ${
+                    isCrit ? 'bg-rose-50/70 border-rose-200 text-rose-950' :
+                    isHigh ? 'bg-amber-50/70 border-amber-200 text-amber-950' :
+                    'bg-slate-50 border-slate-200 text-slate-900'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold flex items-center gap-1.5">
+                      {isCrit && <AlertOctagon className="w-4 h-4 text-rose-600 shrink-0" />}
+                      {isHigh && <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />}
+                      {isMed && <AlertCircle className="w-4 h-4 text-blue-600 shrink-0" />}
+                      {!isCrit && !isHigh && !isMed && <Info className="w-4 h-4 text-slate-500 shrink-0" />}
+                      {al.type}
+                    </span>
+                    <span className="text-[10px] font-bold uppercase font-mono px-2 py-0.5 rounded bg-white/80 border border-slate-200">
+                      {al.severity}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-600 line-clamp-2">{al.message}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

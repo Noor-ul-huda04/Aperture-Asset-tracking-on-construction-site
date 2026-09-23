@@ -11,9 +11,9 @@ interface CheckoutCustodyViewProps {
 }
 
 export const CheckoutCustodyView: React.FC<CheckoutCustodyViewProps> = ({
-  checkouts,
-  assets,
-  users,
+  checkouts = [],
+  assets = [],
+  users = [],
   onCreateCheckout,
   onReturnCheckout
 }) => {

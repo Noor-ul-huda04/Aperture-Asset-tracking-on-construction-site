@@ -231,37 +231,45 @@ export const AiEventBehaviorView: React.FC<AiEventBehaviorViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredEvents.slice(0, 20).map(evt => (
-                <tr key={evt.id} className="hover:bg-slate-50/80 transition-colors">
-                  <td className="py-3 px-3 font-mono text-slate-500 text-[11px]">
-                    {evt.timestamp ? new Date(evt.timestamp).toLocaleTimeString() : 'N/A'}
-                  </td>
-                  <td className="py-3 px-3 font-bold text-slate-900">
-                    {evt.assetName}
-                  </td>
-                  <td className="py-3 px-3 font-mono text-blue-800 font-bold">
-                    {evt.epc ? (evt.epc.length > 12 ? evt.epc.slice(-12) : evt.epc) : 'N/A'}
-                  </td>
-                  <td className="py-3 px-3 text-slate-600">
-                    {evt.readerName}
-                  </td>
-                  <td className="py-3 px-3 text-slate-600 font-semibold">
-                    {evt.zoneName}
-                  </td>
-                  <td className="py-3 px-3 font-mono font-bold text-amber-700">
-                    {evt.rssi} dBm
-                  </td>
-                  <td className="py-3 px-3">
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                      evt.eventType === 'ENTER' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                      evt.eventType === 'EXIT' ? 'bg-red-50 text-red-700 border border-red-200' :
-                      'bg-blue-50 text-blue-800 border border-blue-200'
-                    }`}>
-                      {evt.eventType}
-                    </span>
+              {filteredEvents.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-8 text-center text-slate-400 text-xs">
+                    No RFID read events recorded yet. Connect an active RFID gateway or handheld scanner to stream tag pulses.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                filteredEvents.slice(0, 20).map(evt => (
+                  <tr key={evt.id} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="py-3 px-3 font-mono text-slate-500 text-[11px]">
+                      {evt.timestamp ? new Date(evt.timestamp).toLocaleTimeString() : 'N/A'}
+                    </td>
+                    <td className="py-3 px-3 font-bold text-slate-900">
+                      {evt.assetName}
+                    </td>
+                    <td className="py-3 px-3 font-mono text-blue-800 font-bold">
+                      {evt.epc ? (evt.epc.length > 12 ? evt.epc.slice(-12) : evt.epc) : 'N/A'}
+                    </td>
+                    <td className="py-3 px-3 text-slate-600">
+                      {evt.readerName}
+                    </td>
+                    <td className="py-3 px-3 text-slate-600 font-semibold">
+                      {evt.zoneName}
+                    </td>
+                    <td className="py-3 px-3 font-mono font-bold text-amber-700">
+                      {evt.rssi} dBm
+                    </td>
+                    <td className="py-3 px-3">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                        evt.eventType === 'ENTER' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                        evt.eventType === 'EXIT' ? 'bg-red-50 text-red-700 border border-red-200' :
+                        'bg-blue-50 text-blue-800 border border-blue-200'
+                      }`}>
+                        {evt.eventType}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

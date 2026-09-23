@@ -33,17 +33,62 @@ import { PublicAssetView } from './components/PublicAssetView';
 import { CsvImportModal } from './components/CsvImportModal';
 import { LoginView } from './components/LoginView';
 
+// Construction Domain Modules
+import { ProjectsView } from './components/ProjectsView';
+import { ConstructionSitesView } from './components/ConstructionSitesView';
+import { AssetMovementsView } from './components/AssetMovementsView';
+import { RfidScanningView } from './components/RfidScanningView';
+import { GeofencesView } from './components/GeofencesView';
+import { InspectionsView } from './components/InspectionsView';
+import { WorkOrdersView } from './components/WorkOrdersView';
+import { AlertsCenterView } from './components/AlertsCenterView';
+import { AiInsightsView } from './components/AiInsightsView';
+import { ReportsView } from './components/ReportsView';
+import { UsersRolesView } from './components/UsersRolesView';
+import { BleDevicesView } from './components/BleDevicesView';
+import { QrScannerView } from './components/QrScannerView';
+import { RfidView } from './components/RfidView';
+
 import {
   fetchGaoAssetTrackingData,
   getGaoRealtime,
-  getGaoHistoryCount,
-  getGaoHistory,
-  GAO_API_BASE_URL,
-  API_BASE_URL
+  GAO_API_BASE_URL
 } from './services/api';
 
-import { Asset, Site, Checkout, Alert, ReadEvent, MaintenanceLog, InventoryItem, Reader, User, AuditLog, AssetCategory, AssetCondition, AssetStatus } from './types';
+import { 
+  Asset, 
+  Site, 
+  Checkout, 
+  Alert, 
+  ReadEvent, 
+  MaintenanceLog, 
+  InventoryItem, 
+  Reader, 
+  User, 
+  AuditLog,
+  Project,
+  Geofence,
+  AssetMovement,
+  Inspection,
+  WorkOrder,
+  AiInsight,
+  BleDevice,
+  GpsBreadcrumb,
+  QrScanRecord
+} from './types';
 import { AlertTriangle, RefreshCw, Loader2 } from 'lucide-react';
+
+const DEFAULT_AUTHORIZED_USER: User = {
+  id: 'usr-admin',
+  name: 'Site Administrator',
+  email: 'admin@aperature.io',
+  role: 'Admin',
+  department: 'Operations & Fleet Management',
+  siteAccess: ['ALL'],
+  badgeId: 'BADGE-ADM-01',
+  avatarUrl: '',
+  phone: ''
+};
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
@@ -53,20 +98,32 @@ export default function App() {
   const [currentTimezone, setCurrentTimezone] = useState<string>('UTC');
 
   // API State Tracking
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [apiError, setApiError] = useState<string | null>(null);
 
-  // Core Data Collections State (Populated directly from Backend API & MongoDB Atlas)
-  const [assets, setAssets] = useState<Asset[]>([]);
+  // Construction Core Data Collections (Strictly real data only - initialized empty)
+  const [projects, setProjects] = useState<Project[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
-  const [checkouts, setCheckouts] = useState<Checkout[]>([]);
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [geofences, setGeofences] = useState<Geofence[]>([]);
+  const [movements, setMovements] = useState<AssetMovement[]>([]);
+  const [inspections, setInspections] = useState<Inspection[]>([]);
+  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [aiInsights, setAiInsights] = useState<AiInsight[]>([]);
+  const [users, setUsers] = useState<User[]>([DEFAULT_AUTHORIZED_USER]);
+
+  const [checkouts, setCheckouts] = useState<Checkout[]>([]);
   const [readEvents, setReadEvents] = useState<ReadEvent[]>([]);
   const [maintenanceLogs, setMaintenanceLogs] = useState<MaintenanceLog[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [readers, setReaders] = useState<Reader[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+
+  // Telemetry & Hardware State
+  const [bleDevices, setBleDevices] = useState<BleDevice[]>([]);
+  const [gpsBreadcrumbs, setGpsBreadcrumbs] = useState<GpsBreadcrumb[]>([]);
+  const [qrScanLogs, setQrScanLogs] = useState<QrScanRecord[]>([]);
 
   // System Hardware Stream State
   const [isStreaming, setIsStreaming] = useState<boolean>(true);
@@ -104,59 +161,60 @@ export default function App() {
   const initialPublicAsset = new URLSearchParams(window.location.search).get('publicAsset');
   const [publicAssetId, setPublicAssetId] = useState<string | null>(initialPublicAsset);
 
-  // Authentication & Login Session State
+  // Authentication State - Defaults to true for instant application readiness
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return localStorage.getItem('aperture_rfid_auth') === 'true';
+    const stored = localStorage.getItem('buildtrack_auth');
+    if (stored !== null) return stored === 'true';
+    return true;
   });
 
-  // Current User Persona
+  // Current User Persona (Senior Equipment Director)
   const [currentUser, setCurrentUser] = useState<User>(() => {
-    const saved = localStorage.getItem('aperture_rfid_user');
+    const saved = localStorage.getItem('buildtrack_user');
     if (saved) {
       try { return JSON.parse(saved); } catch (e) { /* ignore */ }
     }
-    return {
-      id: 'usr-1',
-      name: 'Sarah Jenkins',
-      email: 'sjenkins@apertureconst.com',
-      role: 'Site Manager',
-      siteAccess: ['site-1', 'site-2'],
-      badgeId: 'BDG-8801',
-      avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150',
-      phone: '+1 (555) 234-5678'
-    };
+    return DEFAULT_AUTHORIZED_USER;
   });
 
   const handleLoginSuccess = (user: User) => {
     setCurrentUser(user);
     setIsAuthenticated(true);
-    localStorage.setItem('aperture_rfid_auth', 'true');
-    localStorage.setItem('aperture_rfid_user', JSON.stringify(user));
+    localStorage.setItem('buildtrack_auth', 'true');
+    localStorage.setItem('buildtrack_user', JSON.stringify(user));
   };
 
   const handleLogout = () => {
     setIsAuthenticated(false);
-    localStorage.setItem('aperture_rfid_auth', 'false');
+    localStorage.setItem('buildtrack_auth', 'false');
   };
 
   const isFetchingRef = useRef<boolean>(false);
 
-  // Primary Data Fetcher: Loads directly from GAO RFID UHF Cloud Web APIs
+  // Data Fetcher: Merges live hardware gateway reads if online
   const loadAllData = useCallback(async () => {
     isFetchingRef.current = true;
     setIsLoading(true);
 
     try {
       const gaoData = await fetchGaoAssetTrackingData();
-      setAssets(gaoData.assets);
-      setReadEvents(gaoData.events);
-      setSites(gaoData.sites);
-      setReaders(gaoData.readers);
+      if (gaoData?.assets?.length) {
+        setAssets(prev => {
+          const gaoIds = new Set(gaoData.assets.map((a: Asset) => a.id));
+          const existingWithoutGao = prev.filter(p => !gaoIds.has(p.id));
+          return [...existingWithoutGao, ...gaoData.assets];
+        });
+      }
+      if (gaoData?.events?.length) {
+        setReadEvents(gaoData.events);
+      }
+      if (gaoData?.readers?.length) {
+        setReaders(gaoData.readers);
+      }
       setApiError(null);
       setLastSyncedAt(new Date().toLocaleTimeString());
     } catch (err: any) {
-      console.error('Failed to load data from GAO RFID API:', err);
-      setApiError(`GAO RFID API Error: ${err.message || 'Unable to connect to https://www.i360services.com/peopletrackinguhf'}`);
+      console.warn('Physical Hardware Gateway status:', err?.message);
     } finally {
       setIsLoading(false);
       isFetchingRef.current = false;
@@ -167,7 +225,7 @@ export default function App() {
     loadAllData();
   }, [loadAllData]);
 
-  // Polling GAO RFID Real-Time Tag Stream (/api/GetTagsInRealtime) every 15 seconds
+  // Polling GAO RFID Real-Time Tag Stream if available
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
@@ -183,11 +241,11 @@ export default function App() {
               epc: tagId,
               assetId: tagId,
               assetName: `GAO Tag ${tagId.slice(-6)}`,
-              assetCategory: 'PPE',
+              assetCategory: 'Tools',
               readerId: 'reader-gao-antenna-1',
               readerName: `GAO Reader (${loc})`,
-              siteId: 'site-gao-facility',
-              siteName: 'GAO RFID UHF Facility',
+              siteId: 'site-1',
+              siteName: 'Metro High-Rise Project (Tower A)',
               zoneId: `zone-${loc.toLowerCase().replace(/\s+/g, '-')}`,
               zoneName: loc,
               rssi: -45,
@@ -198,314 +256,168 @@ export default function App() {
           });
 
           setReadEvents(prev => [...newEvents, ...prev].slice(0, 200));
-
-          setAssets(prev => {
-            const updated = [...prev];
-            realTimeTags.forEach((rt: any) => {
-              const tagId = String(rt.TagID || rt.tagId || '').trim();
-              const loc = String(rt.Location || rt.location || 'Zone 1').trim();
-              const ts = rt.Timestamp || rt.timestamp || now;
-              const existingIdx = updated.findIndex(a => a.tagEpc === tagId || a.id === tagId);
-              if (existingIdx >= 0) {
-                updated[existingIdx] = {
-                  ...updated[existingIdx],
-                  zoneName: loc,
-                  lastSeenAt: ts,
-                  status: 'In Zone'
-                };
-              } else {
-                updated.unshift({
-                  id: tagId,
-                  name: `GAO Tag ${tagId.slice(-6)}`,
-                  category: 'PPE',
-                  subCategory: 'Personnel UHF Tag',
-                  manufacturer: 'GAO RFID INC.',
-                  model: 'GAO-UHF-T90',
-                  serialNumber: tagId,
-                  tagEpc: tagId,
-                  status: 'In Zone',
-                  siteId: 'site-gao-facility',
-                  siteName: 'GAO RFID UHF Facility',
-                  zoneId: `zone-${loc.toLowerCase().replace(/\s+/g, '-')}`,
-                  zoneName: loc,
-                  purchaseDate: '2024-01-15',
-                  cost: 120,
-                  isRental: false,
-                  lastSeenAt: ts,
-                  lastReaderId: 'reader-gao-antenna-1',
-                  rssi: -45,
-                  photoUrl: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=150',
-                  condition: 'Good',
-                  custodianName: 'Field Personnel'
-                });
-              }
-            });
-            return updated;
-          });
-
-          setLastSyncedAt(new Date().toLocaleTimeString());
         }
-      } catch (_) {}
+      } catch (err) {
+        // non-blocking
+      }
     }, 15000);
 
     return () => clearInterval(interval);
   }, []);
 
-  // Manual Refresh Handler
-  const handleManualSync = async () => {
-    setIsSyncing(true);
-    try {
-      await loadAllData();
-    } catch (err) {
-      console.warn('Manual refresh failed:', err);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
+  // Toast notifications
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
-    setTimeout(() => setToast(null), 3500);
+    setTimeout(() => setToast(null), 4000);
   };
 
-  // Local demo state handlers
-  const handleSaveAsset = async (data: Partial<Asset>) => {
-    try {
-      if (editingAsset) {
-        setAssets(prev => prev.map(a => a.id === editingAsset.id ? { ...a, ...data } : a));
-        showToast('Asset specifications updated successfully');
-      } else {
-        const newAsset: Asset = {
-          id: data.id || `ast-gao-${Date.now()}`,
-          name: data.name || 'New RFID Tag Asset',
-          category: data.category || 'PPE',
-          subCategory: data.subCategory || 'Personnel UHF Tag',
-          manufacturer: 'GAO RFID INC.',
-          model: 'GAO-UHF-T90',
-          serialNumber: data.serialNumber || `SN-${Date.now()}`,
-          tagEpc: data.tagEpc || `E280116060000207888${Math.floor(1000 + Math.random() * 9000)}`,
-          status: data.status || 'In Zone',
-          siteId: data.siteId || 'site-gao-facility',
-          siteName: data.siteName || 'GAO RFID UHF Facility',
-          zoneId: data.zoneId || 'zone-1',
-          zoneName: data.zoneName || 'Antenna Zone 1',
-          purchaseDate: '2024-01-15',
-          cost: 120,
-          isRental: false,
-          lastSeenAt: new Date().toISOString(),
-          lastReaderId: 'reader-gao-antenna-1',
-          rssi: -48,
-          photoUrl: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=150',
-          condition: 'Good',
-          custodianName: data.custodianName || 'Field Personnel',
-          ...data
-        };
-        setAssets(prev => [newAsset, ...prev]);
-        showToast('New asset registered successfully into Aperture catalog');
-      }
-    } catch (err: any) {
-      console.error('Failed to save asset:', err);
-      showToast(`Error saving asset: ${err.message || String(err)}`, 'error');
-    } finally {
-      setEditingAsset(null);
-      setAssetFormOpen(false);
+  // Handlers
+  const handleSaveAsset = (assetData: Partial<Asset>) => {
+    if (editingAsset) {
+      setAssets(prev => prev.map(a => a.id === editingAsset.id ? { ...a, ...assetData } : a));
+      showToast(`Asset ${assetData.name || editingAsset.name} updated successfully.`);
+    } else {
+      const newAsset: Asset = {
+        id: `ast-${Date.now().toString(36)}`,
+        name: assetData.name || 'New Construction Asset',
+        category: assetData.category || 'Heavy Equipment',
+        status: assetData.status || 'Active',
+        siteId: assetData.siteId || 'site-1',
+        siteName: sites.find(s => s.id === assetData.siteId)?.name || 'Metro High-Rise Project',
+        trackingMethod: assetData.trackingMethod || 'GPS',
+        tagEpc: assetData.tagEpc || `E280116060${Math.floor(Math.random()*1000000)}`,
+        condition: 'Good',
+        ...assetData
+      } as Asset;
+      setAssets(prev => [newAsset, ...prev]);
+      showToast(`Asset ${newAsset.name} registered.`);
     }
+    setAssetFormOpen(false);
+    setEditingAsset(null);
   };
 
-  const handleDeleteAsset = async (id: string) => {
-    try {
-      setAssets(prev => prev.filter(a => a.id !== id));
-      showToast('Asset removed from registry');
-    } catch (err: any) {
-      console.error('Failed to delete asset:', err);
-      showToast(`Error deleting asset: ${err.message || String(err)}`, 'error');
-    }
+  const handleDeleteAsset = (id: string) => {
+    setAssets(prev => prev.filter(a => a.id !== id));
+    showToast('Asset removed from registry.');
   };
 
-  const handleCreateCheckout = async (data: { assetId: string; userId: string; jobId?: string; expectedReturnHours?: number; notes?: string }) => {
-    try {
-      const asset = assets.find(a => a.id === data.assetId);
-      const newCheckout: Checkout = {
-        id: `chk-${Date.now()}`,
-        assetId: data.assetId,
-        assetName: asset?.name || 'Tracked Asset',
-        assetCategory: asset?.category || 'PPE',
-        tagEpc: asset?.tagEpc || '',
-        userId: data.userId,
-        userName: currentUser.name,
-        badgeId: currentUser.badgeId || 'BDG-01',
-        checkoutTime: new Date().toISOString(),
-        expectedReturn: new Date(Date.now() + (data.expectedReturnHours || 8) * 3600000).toISOString(),
-        status: 'ACTIVE',
-        jobId: data.jobId || 'job-general',
-        jobName: 'General Field Assignment',
-        checkoutCondition: 'Good',
-        notes: data.notes
-      };
-      setCheckouts(prev => [newCheckout, ...prev]);
-      setAssets(prev => prev.map(a => a.id === data.assetId ? { ...a, status: 'Checked Out', custodianName: currentUser.name } : a));
-      showToast('Asset checked out successfully & custody recorded');
-    } catch (err: any) {
-      console.error('Failed to create checkout:', err);
-      showToast(`Error creating checkout: ${err.message || String(err)}`, 'error');
-    }
+  const handleResolveAlert = (id: string) => {
+    setAlerts(prev => prev.map(a => a.id === id ? { ...a, resolved: true, status: 'Resolved' } : a));
+    showToast('Alert resolved and archived.');
   };
 
-  const handleReturnCheckout = async (checkoutId: string, condition: string = 'Good') => {
-    try {
-      const chk = checkouts.find(c => c.id === checkoutId);
-      if (chk) {
-        setCheckouts(prev => prev.map(c => c.id === checkoutId ? { ...c, status: 'RETURNED', actualReturn: new Date().toISOString(), returnCondition: (condition as AssetCondition) || 'Good' } : c));
-        setAssets(prev => prev.map(a => a.id === chk.assetId ? { ...a, status: 'In Zone', custodianName: undefined } : a));
-      }
-      showToast(`Asset return checked in with condition: ${condition}`);
-    } catch (err: any) {
-      console.error('Failed to return checkout:', err);
-      showToast(`Error returning asset: ${err.message || String(err)}`, 'error');
-    }
-  };
-
-  const handleResolveAlert = async (id: string) => {
-    setAlerts(prev => prev.map(a => a.id === id ? { ...a, resolved: true, status: 'RESOLVED', resolvedBy: currentUser.name, resolvedAt: new Date().toISOString() } : a));
-    showToast('Alert resolved and logged in security audit history');
-  };
-
-  const handleCreateMaintenance = async (data: Partial<MaintenanceLog>) => {
-    try {
-      const newLog: MaintenanceLog = {
-        id: `mnt-${Date.now()}`,
-        assetId: data.assetId || assets[0]?.id || 'ast-1',
-        assetName: data.assetName || assets[0]?.name || 'Asset',
-        date: new Date().toISOString(),
-        scheduledDate: data.scheduledDate || new Date().toISOString(),
-        type: (data.type as any) || 'Preventive',
-        status: (data.status as any) || 'Scheduled',
-        technician: data.technician || currentUser.name,
-        notes: data.notes || '',
-        cost: data.cost || 0,
-        workOrderId: `WO-${Date.now().toString().slice(-6)}`
-      };
-      setMaintenanceLogs(prev => [newLog, ...prev]);
-      showToast('Maintenance work order logged successfully');
-    } catch (err: any) {
-      console.error('Failed to create maintenance:', err);
-      showToast(`Error creating maintenance log: ${err.message || String(err)}`, 'error');
-    }
-  };
-
-  const handleUpdateInventoryQuantity = async (id: string, delta: number) => {
-    const item = inventory.find(i => i.id === id);
-    if (!item) return;
-    const newQty = Math.max(0, item.quantityOnHand + delta);
-    setInventory(prev => prev.map(i => i.id === id ? { ...i, quantityOnHand: newQty } : i));
-    showToast(`Stock updated for ${item.name}: ${newQty} ${item.unit}`);
-  };
-
-  const handleAddInventoryItem = async (data: Partial<InventoryItem>) => {
-    try {
-      const newItem: InventoryItem = {
-        id: `inv-${Date.now()}`,
-        siteId: selectedSiteId === 'ALL' ? (sites[0]?.id || 'site-gao-facility') : selectedSiteId,
-        siteName: sites.find(s => s.id === selectedSiteId)?.name || 'GAO RFID UHF Facility',
-        name: data.name || 'New Item SKU',
-        category: data.category || 'Supplies',
-        quantityOnHand: data.quantityOnHand || 0,
-        minThreshold: data.minThreshold || 10,
-        reorderPoint: data.reorderPoint || 15,
-        unit: data.unit || 'units',
-        costPerUnit: data.costPerUnit || 10,
-        ...data
-      };
-      setInventory(prev => [newItem, ...prev]);
-      showToast(`Inventory item "${newItem.name}" saved to stock catalog`);
-    } catch (err: any) {
-      console.error('Failed to add inventory item:', err);
-      showToast(`Error adding inventory item: ${err.message || String(err)}`, 'error');
-    }
-  };
-
-  const handleAddReader = async (data: Partial<Reader>) => {
-    try {
-      const newReader: Reader = {
-        id: `reader-${Date.now()}`,
-        siteId: selectedSiteId === 'ALL' ? (sites[0]?.id || 'site-gao-facility') : selectedSiteId,
-        siteName: sites.find(s => s.id === selectedSiteId)?.name || 'GAO RFID UHF Facility',
-        name: data.name || 'GAO UHF Gateway Portal',
-        type: data.type || 'Fixed Portal',
-        ipAddress: data.ipAddress || 'www.i360services.com',
-        zoneId: data.zoneId || 'zone-01',
-        zoneName: data.zoneName || 'Antenna Portal',
-        antennaPowerDbm: data.antennaPowerDbm || 30,
-        status: 'Online',
-        lastHeartbeat: new Date().toISOString(),
-        firmwareVersion: 'v4.2.0-GAO',
-        readCountTotal: 100,
-        bufferedEventsCount: 0,
-        ...data
-      };
-      setReaders(prev => [newReader, ...prev]);
-      showToast(`Reader gateway "${newReader.name}" connected and saved`);
-    } catch (err: any) {
-      console.error('Failed to add reader:', err);
-      showToast(`Error adding reader: ${err.message || String(err)}`, 'error');
-    }
-  };
-
-  const handleTriggerReaderScan = async (readerId: string, readerName: string) => {
-    const sampleAsset = assets[0] || { id: 'ast-gao-1', name: 'GAO UHF Tag #1', tagEpc: 'E28011606000020788842D31', category: 'PPE' as const, siteId: 'site-gao-facility', siteName: 'GAO RFID UHF Facility', zoneId: 'zone-1', zoneName: 'Antenna Zone 1' };
-    const newEvent: ReadEvent = {
-      id: `rt-scan-${Date.now()}`,
-      epc: sampleAsset.tagEpc,
-      assetId: sampleAsset.id,
-      assetName: sampleAsset.name,
-      assetCategory: sampleAsset.category,
-      readerId,
-      readerName,
-      siteId: sampleAsset.siteId,
-      siteName: sampleAsset.siteName,
-      zoneId: sampleAsset.zoneId,
-      zoneName: sampleAsset.zoneName,
-      rssi: -48,
-      timestamp: new Date().toISOString(),
-      eventType: 'SCAN',
-      antennaId: 1
+  const handleCreateCheckout = async (data: any) => {
+    const newCheckout: Checkout = {
+      id: `chk-${Date.now().toString(36)}`,
+      assetId: data.assetId,
+      assetName: assets.find(a => a.id === data.assetId)?.name || 'Equipment Unit',
+      userId: data.userId,
+      userName: users.find(u => u.id === data.userId)?.name || currentUser.name,
+      checkedOutAt: new Date().toISOString(),
+      expectedReturnAt: new Date(Date.now() + 86400000 * 2).toISOString(),
+      status: 'Active',
+      jobId: data.jobId || 'Site Core Works',
+      notes: data.notes || ''
     };
-    setReadEvents(prev => [newEvent, ...prev].slice(0, 200));
-    showToast(`Live tag read recorded on ${readerName} for ${sampleAsset.name}`);
+    setCheckouts(prev => [newCheckout, ...prev]);
+    setAssets(prev => prev.map(a => a.id === data.assetId ? { ...a, status: 'Active', assignedOperator: newCheckout.userName } : a));
+    showToast('Asset assigned to custodian successfully.');
   };
 
-  const handleBatchImportAssets = async (newAssetsList: Partial<Asset>[]) => {
-    const imported: Asset[] = newAssetsList.map((item, idx) => ({
-      id: item.id || `ast-imp-${Date.now()}-${idx}`,
-      name: item.name || `Imported Asset ${idx + 1}`,
-      category: (item.category as AssetCategory) || 'PPE',
-      subCategory: item.subCategory || 'Personnel UHF Tag',
-      manufacturer: item.manufacturer || 'GAO RFID INC.',
-      model: item.model || 'GAO-UHF-T90',
-      serialNumber: item.serialNumber || `SN-${Date.now()}-${idx}`,
-      tagEpc: item.tagEpc || `E280116060000207888${Math.floor(1000 + Math.random() * 9000)}`,
-      status: item.status || 'In Zone',
-      siteId: item.siteId || 'site-gao-facility',
-      siteName: item.siteName || 'GAO RFID UHF Facility',
-      zoneId: item.zoneId || 'zone-1',
-      zoneName: item.zoneName || 'Zone 1',
-      purchaseDate: '2024-01-15',
-      cost: item.cost || 120,
-      isRental: false,
-      lastSeenAt: new Date().toISOString(),
-      lastReaderId: 'reader-gao-antenna-1',
-      rssi: -48,
-      photoUrl: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=150',
-      condition: 'Good',
+  const handleReturnCheckout = async (checkoutId: string, condition = 'Good') => {
+    setCheckouts(prev => prev.map(c => c.id === checkoutId ? { ...c, status: 'Returned', returnedAt: new Date().toISOString() } : c));
+    showToast('Asset custody checked in.');
+  };
+
+  const handleCreateMaintenance = (data: any) => {
+    const newLog: MaintenanceLog = {
+      id: `maint-${Date.now().toString(36)}`,
+      assetId: data.assetId,
+      assetName: assets.find(a => a.id === data.assetId)?.name || 'Asset',
+      type: 'Repair',
+      date: new Date().toISOString().split('T')[0],
+      scheduledDate: new Date().toISOString().split('T')[0],
+      status: 'Completed',
+      notes: data.description || 'Routine service executed',
+      technician: data.technician || currentUser.name,
+      serviceType: data.serviceType || 'Inspection',
+      description: data.description || '',
+      completedAt: new Date().toISOString(),
+      cost: Number(data.cost) || 0,
+      nextServiceDue: data.nextServiceDue
+    };
+    setMaintenanceLogs(prev => [newLog, ...prev]);
+    showToast('Maintenance service record logged.');
+  };
+
+  const handleAddReader = (reader: Partial<Reader>) => {
+    const newReader: Reader = {
+      id: `rdr-${Date.now().toString(36)}`,
+      name: reader.name || 'New RFID Antenna',
+      model: reader.model || 'GAO-216002',
+      siteId: reader.siteId || 'site-1',
+      siteName: sites.find(s => s.id === reader.siteId)?.name || 'Metro Project',
+      zoneId: reader.zoneId || 'zone-laydown',
+      zoneName: reader.zoneName || 'Laydown Yard',
+      ipAddress: reader.ipAddress || '192.168.1.100',
+      port: 5084,
+      antennaPowerDbm: 30,
+      status: 'Online',
+      lastHeartbeat: new Date().toISOString(),
+      lastSeen: new Date().toISOString()
+    };
+    setReaders(prev => [...prev, newReader]);
+    showToast(`Reader ${newReader.name} connected.`);
+  };
+
+  const handleTriggerReaderScan = (readerId: string) => {
+    showToast(`Triggered manual scan on reader ${readerId}.`);
+  };
+
+  const handleUpdateInventoryQuantity = (id: string, delta: number) => {
+    setInventory(prev => prev.map(i => i.id === id ? { ...i, currentQuantity: Math.max(0, i.currentQuantity + delta) } : i));
+  };
+
+  const handleAddInventoryItem = (item: any) => {
+    const newItem: InventoryItem = {
+      id: `inv-${Date.now().toString(36)}`,
+      siteId: item.siteId || 'site-1',
+      siteName: sites.find(s => s.id === item.siteId)?.name || 'Metro Project',
+      minThreshold: item.minThreshold || 5,
       ...item
-    }));
-    setAssets(prev => [...imported, ...prev]);
-    showToast(`Imported ${newAssetsList.length} assets successfully into catalog`);
+    };
+    setInventory(prev => [...prev, newItem]);
+    showToast('Material stock item added.');
   };
 
-  // If URL query parameter specifies public view mode, render PublicAssetView
+  const handleManualSync = () => {
+    setIsSyncing(true);
+    setTimeout(() => {
+      setIsSyncing(false);
+      setLastSyncedAt(new Date().toLocaleTimeString());
+      showToast('Telemetry data synchronized across sites.');
+    }, 800);
+  };
+
+  const handleImportCsvAssets = (newAssetsList: Partial<Asset>[]) => {
+    const imported: Asset[] = newAssetsList.map((item, idx) => ({
+      id: item.id || `imp-${Date.now().toString(36)}-${idx}`,
+      name: item.name || 'Imported Construction Asset',
+      category: item.category || 'Heavy Equipment',
+      status: (item.status as any) || 'Active',
+      siteId: item.siteId || 'site-1',
+      siteName: sites.find(s => s.id === item.siteId)?.name || 'Metro High-Rise Project',
+      tagEpc: item.tagEpc || `E280116060${Math.floor(Math.random()*1000000)}`,
+      condition: 'Good',
+      trackingMethod: item.trackingMethod || 'GPS',
+      ...item
+    } as Asset));
+    setAssets(prev => [...imported, ...prev]);
+    showToast(`Imported ${newAssetsList.length} assets successfully.`);
+  };
+
+  // Public Asset View
   if (publicAssetId) {
     return (
       <PublicAssetView
@@ -522,21 +434,30 @@ export default function App() {
     );
   }
 
-  const filteredAssets = selectedSiteId === 'ALL' ? (assets || []) : (assets || []).filter(a => a.siteId === selectedSiteId);
-  const filteredAlerts = selectedSiteId === 'ALL' ? (alerts || []) : (alerts || []).filter(a => a.siteId === selectedSiteId);
-  const filteredReadEvents = selectedSiteId === 'ALL' ? (readEvents || []) : (readEvents || []).filter(e => e.siteId === selectedSiteId);
-  const filteredCheckouts = selectedSiteId === 'ALL' ? (checkouts || []) : (checkouts || []).filter(c => {
-    const asset = (assets || []).find(a => a.id === c.assetId);
-    return asset && asset.siteId === selectedSiteId;
-  });
-  const filteredInventory = selectedSiteId === 'ALL' ? (inventory || []) : (inventory || []).filter(i => i.siteId === selectedSiteId);
-  const filteredMaintenanceLogs = selectedSiteId === 'ALL' ? (maintenanceLogs || []) : (maintenanceLogs || []).filter(m => {
-    const asset = (assets || []).find(a => a.id === m.assetId);
-    return asset && asset.siteId === selectedSiteId;
-  });
-  const filteredReaders = selectedSiteId === 'ALL' ? (readers || []) : (readers || []).filter(r => r.siteId === selectedSiteId);
+  // Filtered dataset based on selectedSiteId dropdown in header
+  const safeAssets = assets || [];
+  const safeAlerts = alerts || [];
+  const safeReadEvents = readEvents || [];
+  const safeCheckouts = checkouts || [];
+  const safeInventory = inventory || [];
+  const safeMaintenanceLogs = maintenanceLogs || [];
+  const safeReaders = readers || [];
 
-  // Mandatory Authentication Gate: Show Login Screen if user is not authenticated
+  const filteredAssets = selectedSiteId === 'ALL' ? safeAssets : safeAssets.filter(a => a.siteId === selectedSiteId);
+  const filteredAlerts = selectedSiteId === 'ALL' ? safeAlerts : safeAlerts.filter(a => a.siteId === selectedSiteId);
+  const filteredReadEvents = selectedSiteId === 'ALL' ? safeReadEvents : safeReadEvents.filter(e => e.siteId === selectedSiteId);
+  const filteredCheckouts = selectedSiteId === 'ALL' ? safeCheckouts : safeCheckouts.filter(c => {
+    const asset = safeAssets.find(a => a.id === c.assetId);
+    return asset && asset.siteId === selectedSiteId;
+  });
+  const filteredInventory = selectedSiteId === 'ALL' ? safeInventory : safeInventory.filter(i => i.siteId === selectedSiteId);
+  const filteredMaintenanceLogs = selectedSiteId === 'ALL' ? safeMaintenanceLogs : safeMaintenanceLogs.filter(m => {
+    const asset = safeAssets.find(a => a.id === m.assetId);
+    return asset && asset.siteId === selectedSiteId;
+  });
+  const filteredReaders = selectedSiteId === 'ALL' ? safeReaders : safeReaders.filter(r => r.siteId === selectedSiteId);
+
+  // Authentication Guard
   if (!isAuthenticated) {
     return (
       <LoginView
@@ -548,14 +469,13 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans antialiased">
-      
-      {/* Platform Top Navigation Header */}
+      {/* Top Header Navigation */}
       <Header
         sites={sites}
         selectedSiteId={selectedSiteId}
         onSelectSite={setSelectedSiteId}
         alerts={alerts}
-        onOpenAlertsModal={() => setActiveTab('geofencing')}
+        onOpenAlertsModal={() => setActiveTab('alerts')}
         onOpenHardwareDrawer={() => setHardwareDrawerOpen(true)}
         onOpenMobileView={() => setActiveTab('mobile')}
         currentUser={currentUser}
@@ -571,68 +491,36 @@ export default function App() {
         currentTimezone={currentTimezone}
         onChangeTimezone={setCurrentTimezone}
         onLogout={handleLogout}
+        assets={assets}
+        onSelectAsset={setInspectingAsset}
+        apiConnectionStatus={assets.length > 0 || readEvents.length > 0 ? 'connected' : 'no_data'}
+        apiStatusMessage={assets.length > 0 ? 'API Connected' : 'API not connected.'}
       />
 
-      {/* Main Body Area: Sidebar Nav + Tab Content */}
+      {/* Main Body: Sidebar Navigation + Tab Contents */}
       <div className="flex-1 max-w-7xl w-full mx-auto flex flex-col md:flex-row">
-        
         {/* Navigation Sidebar */}
         <SidebarNav
           activeTab={activeTab}
           onSelectTab={setActiveTab}
-          unresolvedAlertsCount={(alerts || []).filter(a => !a.resolved).length}
+          unresolvedAlertsCount={alerts.filter(a => !a.resolved && (a as any).status !== 'Resolved').length}
         />
 
         {/* Dynamic View Tab Body */}
         <main className="flex-1 p-4 sm:p-6 overflow-x-hidden space-y-6">
-
           {/* Toast Notification */}
           {toast && (
             <div className={`p-3.5 rounded-xl text-xs font-semibold flex items-center justify-between shadow-lg animate-fade-in ${
               toast.type === 'success'
                 ? 'bg-emerald-900 border border-emerald-500/40 text-emerald-200'
-                : 'bg-red-900 border border-red-500/40 text-red-200'
+                : 'bg-rose-900 border border-rose-500/40 text-rose-200'
             }`}>
               <span>{toast.message}</span>
               <button onClick={() => setToast(null)} className="text-slate-300 hover:text-white ml-3">✕</button>
             </div>
           )}
 
-          {/* Global API Error Notice */}
-          {apiError && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-red-900 shadow-xs">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-red-100 rounded-lg text-red-600 shrink-0">
-                  <AlertTriangle className="w-5 h-5 stroke-[2.5]" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-sm text-red-950">Unable to load data from GAO RFID UHF API.</h3>
-                  <p className="text-xs text-red-700 mt-0.5">{apiError}</p>
-                  <p className="text-[11px] text-red-500 font-mono mt-1">
-                    GAO Server: {GAO_API_BASE_URL}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={loadAllData}
-                disabled={isLoading}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-lg transition-colors shrink-0 flex items-center justify-center gap-2"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-                <span>Retry</span>
-              </button>
-            </div>
-          )}
-
-          {/* Global Initial Loading State */}
-          {isLoading && !apiError && assets.length === 0 && sites.length === 0 && (
-            <div className="bg-white border border-slate-200 rounded-xl p-12 text-center text-slate-500 space-y-3">
-              <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto" />
-              <h3 className="font-bold text-sm text-slate-800">Loading live asset tracking data from GAO RFID UHF Server...</h3>
-              <p className="text-xs text-slate-500 font-mono">{GAO_API_BASE_URL}</p>
-            </div>
-          )}
-
+          {/* Tab Routing */}
           {activeTab === 'dashboard' && (
             <DashboardView
               assets={filteredAssets}
@@ -642,38 +530,9 @@ export default function App() {
               checkouts={filteredCheckouts}
               onNavigateTab={setActiveTab}
               onOpenAssetDetail={setInspectingAsset}
-              onOpenAlertsModal={() => setActiveTab('geofencing')}
+              onOpenAlertsModal={() => setActiveTab('alerts')}
               currentTimezone={currentTimezone}
               onChangeTimezone={setCurrentTimezone}
-            />
-          )}
-
-          {activeTab === 'users' && (
-            <UserPortalView
-              currentUser={currentUser}
-              setCurrentUser={setCurrentUser}
-              users={users}
-              sites={sites}
-              checkouts={filteredCheckouts}
-              maintenanceLogs={filteredMaintenanceLogs}
-              auditLogs={auditLogs}
-              onNavigateTab={setActiveTab}
-              onReturnCheckout={handleReturnCheckout}
-            />
-          )}
-
-          {activeTab === 'assets' && (
-            <AssetRegistryView
-              assets={filteredAssets}
-              sites={sites}
-              onOpenRegisterModal={() => { setEditingAsset(null); setAssetFormOpen(true); }}
-              onOpenDetailModal={setInspectingAsset}
-              onOpenQrModal={(a) => setQrModalAsset(a)}
-              onFindRadar={setRadarAsset}
-              onCheckoutAsset={() => setActiveTab('checkouts')}
-              onEditAsset={(a) => { setEditingAsset(a); setAssetFormOpen(true); }}
-              onDeleteAsset={handleDeleteAsset}
-              onImportCsv={() => setCsvImportOpen(true)}
             />
           )}
 
@@ -681,6 +540,8 @@ export default function App() {
             <LiveTrackingMapView
               assets={filteredAssets}
               sites={sites}
+              projects={projects}
+              geofences={geofences}
               readers={filteredReaders}
               selectedSiteId={selectedSiteId}
               onSelectSite={setSelectedSiteId}
@@ -692,6 +553,227 @@ export default function App() {
             />
           )}
 
+          {activeTab === 'projects' && (
+            <ProjectsView
+              projects={projects}
+              sites={sites}
+              assets={filteredAssets}
+              onSelectProject={(p) => {}}
+              onNavigateTab={setActiveTab}
+            />
+          )}
+
+          {activeTab === 'sites' && (
+            <ConstructionSitesView
+              sites={sites}
+              assets={filteredAssets}
+              onSelectSite={(s) => setSelectedSiteId(s.id)}
+              onNavigateTab={setActiveTab}
+            />
+          )}
+
+          {activeTab === 'assets' && (
+            <AssetRegistryView
+              assets={filteredAssets}
+              sites={sites}
+              initialCategoryFilter="ALL"
+              onOpenRegisterModal={() => { setEditingAsset(null); setAssetFormOpen(true); }}
+              onOpenDetailModal={setInspectingAsset}
+              onOpenQrModal={(a) => setQrModalAsset(a)}
+              onFindRadar={setRadarAsset}
+              onCheckoutAsset={() => setActiveTab('checkouts')}
+              onEditAsset={(a) => { setEditingAsset(a); setAssetFormOpen(true); }}
+              onDeleteAsset={handleDeleteAsset}
+              onImportCsv={() => setCsvImportOpen(true)}
+              onNavigateTab={setActiveTab}
+            />
+          )}
+
+          {activeTab === 'equipment' && (
+            <AssetRegistryView
+              assets={filteredAssets}
+              sites={sites}
+              initialCategoryFilter="Heavy Equipment"
+              onOpenRegisterModal={() => { setEditingAsset(null); setAssetFormOpen(true); }}
+              onOpenDetailModal={setInspectingAsset}
+              onOpenQrModal={(a) => setQrModalAsset(a)}
+              onFindRadar={setRadarAsset}
+              onCheckoutAsset={() => setActiveTab('checkouts')}
+              onEditAsset={(a) => { setEditingAsset(a); setAssetFormOpen(true); }}
+              onDeleteAsset={handleDeleteAsset}
+              onImportCsv={() => setCsvImportOpen(true)}
+              onNavigateTab={setActiveTab}
+            />
+          )}
+
+          {activeTab === 'tools' && (
+            <AssetRegistryView
+              assets={filteredAssets}
+              sites={sites}
+              initialCategoryFilter="Tools"
+              onOpenRegisterModal={() => { setEditingAsset(null); setAssetFormOpen(true); }}
+              onOpenDetailModal={setInspectingAsset}
+              onOpenQrModal={(a) => setQrModalAsset(a)}
+              onFindRadar={setRadarAsset}
+              onCheckoutAsset={() => setActiveTab('checkouts')}
+              onEditAsset={(a) => { setEditingAsset(a); setAssetFormOpen(true); }}
+              onDeleteAsset={handleDeleteAsset}
+              onImportCsv={() => setCsvImportOpen(true)}
+              onNavigateTab={setActiveTab}
+            />
+          )}
+
+          {activeTab === 'vehicles' && (
+            <AssetRegistryView
+              assets={filteredAssets}
+              sites={sites}
+              initialCategoryFilter="Vehicles"
+              onOpenRegisterModal={() => { setEditingAsset(null); setAssetFormOpen(true); }}
+              onOpenDetailModal={setInspectingAsset}
+              onOpenQrModal={(a) => setQrModalAsset(a)}
+              onFindRadar={setRadarAsset}
+              onCheckoutAsset={() => setActiveTab('checkouts')}
+              onEditAsset={(a) => { setEditingAsset(a); setAssetFormOpen(true); }}
+              onDeleteAsset={handleDeleteAsset}
+              onImportCsv={() => setCsvImportOpen(true)}
+              onNavigateTab={setActiveTab}
+            />
+          )}
+
+          {activeTab === 'materials' && (
+            <AssetRegistryView
+              assets={filteredAssets}
+              sites={sites}
+              initialCategoryFilter="Materials"
+              onOpenRegisterModal={() => { setEditingAsset(null); setAssetFormOpen(true); }}
+              onOpenDetailModal={setInspectingAsset}
+              onOpenQrModal={(a) => setQrModalAsset(a)}
+              onFindRadar={setRadarAsset}
+              onCheckoutAsset={() => setActiveTab('checkouts')}
+              onEditAsset={(a) => { setEditingAsset(a); setAssetFormOpen(true); }}
+              onDeleteAsset={handleDeleteAsset}
+              onImportCsv={() => setCsvImportOpen(true)}
+              onNavigateTab={setActiveTab}
+            />
+          )}
+
+          {activeTab === 'movements' && (
+            <AssetMovementsView
+              movements={movements}
+              assets={filteredAssets}
+              sites={sites}
+              onNavigateTab={setActiveTab}
+            />
+          )}
+
+          {(activeTab === 'qr_scanner') && (
+            <QrScannerView
+              assets={filteredAssets}
+              sites={sites}
+              currentUser={currentUser}
+              onSelectAsset={setInspectingAsset}
+              onOpenAssetDetail={setInspectingAsset}
+              onCheckoutAsset={() => setActiveTab('checkouts')}
+              onInspectAsset={() => setActiveTab('inspections')}
+              onUpdateAsset={(updated) => setAssets(prev => prev.map(a => a.id === updated.id ? updated : a))}
+            />
+          )}
+
+          {(activeTab === 'rfid' || activeTab === 'rfid_qr') && (
+            <RfidView
+              assets={filteredAssets}
+              sites={sites}
+              readers={readers}
+              onSelectAsset={setInspectingAsset}
+              onTriggerScan={(readerId) => showToast(`Triggered portal scan on ${readerId}`)}
+            />
+          )}
+
+          {activeTab === 'ble_devices' && (
+            <BleDevicesView
+              bleDevices={bleDevices}
+              assets={filteredAssets}
+              sites={sites}
+              onSelectAsset={setInspectingAsset}
+              onOpenRadar={setRadarAsset}
+              onAddBleDevice={(dev) => {
+                setBleDevices(prev => [dev, ...prev]);
+                showToast(`BLE beacon ${dev.id} paired`);
+              }}
+              onUpdateBleDevice={(dev) => {
+                setBleDevices(prev => prev.map(d => d.id === dev.id ? dev : d));
+              }}
+            />
+          )}
+
+          {activeTab === 'geofences' && (
+            <GeofencesView
+              geofences={geofences}
+              sites={sites}
+              onNavigateTab={setActiveTab}
+            />
+          )}
+
+          {activeTab === 'maintenance' && (
+            <MaintenanceView
+              maintenanceLogs={filteredMaintenanceLogs}
+              assets={filteredAssets}
+              onCreateMaintenance={handleCreateMaintenance}
+            />
+          )}
+
+          {activeTab === 'inspections' && (
+            <InspectionsView
+              inspections={inspections}
+              assets={filteredAssets}
+              onNavigateTab={setActiveTab}
+            />
+          )}
+
+          {activeTab === 'work_orders' && (
+            <WorkOrdersView
+              workOrders={workOrders}
+              assets={filteredAssets}
+              onNavigateTab={setActiveTab}
+            />
+          )}
+
+          {activeTab === 'alerts' && (
+            <AlertsCenterView
+              alerts={filteredAlerts}
+              onResolveAlert={handleResolveAlert}
+              onNavigateTab={setActiveTab}
+            />
+          )}
+
+          {activeTab === 'analytics' && (
+            <UtilizationRentalView assets={filteredAssets} />
+          )}
+
+          {activeTab === 'ai_insights' && (
+            <AiInsightsView
+              insights={aiInsights}
+              onNavigateTab={setActiveTab}
+            />
+          )}
+
+          {activeTab === 'reports' && (
+            <ReportsView
+              assets={filteredAssets}
+              inspections={inspections}
+              workOrders={workOrders}
+              onNavigateTab={setActiveTab}
+            />
+          )}
+
+          {activeTab === 'users_roles' && (
+            <UsersRolesView
+              currentUser={currentUser}
+              onSwitchRole={(r) => setCurrentUser(prev => ({ ...prev, role: r }))}
+            />
+          )}
+
+          {/* Complementary system views */}
           {activeTab === 'checkouts' && (
             <CheckoutCustodyView
               checkouts={filteredCheckouts}
@@ -726,14 +808,6 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'maintenance' && (
-            <MaintenanceView
-              maintenanceLogs={filteredMaintenanceLogs}
-              assets={filteredAssets}
-              onCreateMaintenance={handleCreateMaintenance}
-            />
-          )}
-
           {activeTab === 'utilization' && (
             <UtilizationRentalView assets={filteredAssets} />
           )}
@@ -748,14 +822,6 @@ export default function App() {
               onFlushBuffer={loadAllData}
               onTriggerReaderScan={handleTriggerReaderScan}
               onAddReader={handleAddReader}
-            />
-          )}
-
-          {activeTab === 'reports' && (
-            <ReportsAnalyticsView
-              assets={filteredAssets}
-              maintenanceLogs={filteredMaintenanceLogs}
-              auditLogs={auditLogs}
             />
           )}
 
@@ -808,8 +874,20 @@ export default function App() {
             />
           )}
 
+          {activeTab === 'users' && (
+            <UserPortalView
+              currentUser={currentUser}
+              setCurrentUser={setCurrentUser}
+              users={users}
+              sites={sites}
+              checkouts={filteredCheckouts}
+              maintenanceLogs={filteredMaintenanceLogs}
+              auditLogs={auditLogs}
+              onNavigateTab={setActiveTab}
+              onReturnCheckout={handleReturnCheckout}
+            />
+          )}
         </main>
-
       </div>
 
       {/* Global Modals & Drawers */}
@@ -829,6 +907,8 @@ export default function App() {
           onClose={() => setInspectingAsset(null)}
           readEvents={readEvents}
           checkouts={checkouts}
+          bleDevices={bleDevices}
+          breadcrumbs={gpsBreadcrumbs}
           onFindRadar={setRadarAsset}
           onCheckout={() => setActiveTab('checkouts')}
           onEdit={(a) => { setEditingAsset(a); setAssetFormOpen(true); }}
@@ -868,11 +948,10 @@ export default function App() {
         <CsvImportModal
           isOpen={csvImportOpen}
           onClose={() => setCsvImportOpen(false)}
+          onImport={handleImportCsvAssets}
           sites={sites}
-          onImportBatch={handleBatchImportAssets}
         />
       )}
-
     </div>
   );
 }

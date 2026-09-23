@@ -73,7 +73,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess, availableU
         if (emailOrBadge.trim().length > 0) {
           const newUser: User = {
             id: `usr-${Date.now()}`,
-            name: emailOrBadge.includes('@') ? emailOrBadge.split('@')[0].replace('.', ' ') : emailOrBadge,
+            name: emailOrBadge.includes('@') ? (emailOrBadge.split('@')?.[0] || 'User').replace('.', ' ') : (emailOrBadge || 'User'),
             email: emailOrBadge.includes('@') ? emailOrBadge : `${emailOrBadge}@apertureconst.com`,
             role: selectedRole as any,
             siteAccess: ['site-1', 'site-2'],
