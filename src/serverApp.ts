@@ -12,7 +12,7 @@ import {
   cleanMongoDoc,
   cleanMongoDocs
 } from './data/mongodb';
-import { Asset, Checkout, Alert, ReadEvent, MaintenanceLog, Reader, Site, InventoryItem, User, AuditLog, ApiEndpointLogEntry } from './types';
+import { Asset, AssetCategory, Checkout, Alert, ReadEvent, MaintenanceLog, Reader, Site, InventoryItem, User, AuditLog, ApiEndpointLogEntry } from './types';
 import { aperturePostmanCollection } from './data/postmanCollection';
 
 let aiClient: GoogleGenAI | null = null;
@@ -182,6 +182,13 @@ async function syncMongoDBOnStartup() {
     await apiLogsColl.createIndex({ status: 1 });
     await apiLogsColl.createIndex({ method: 1 });
   } catch (e) {}
+
+  // Synchronize directly with live RFID API on startup
+  try {
+    await syncFromGaoApi();
+  } catch (syncErr: any) {
+    console.warn('[Startup] Initial sync from RFID API failed:', syncErr.message);
+  }
 
   setLastSyncedAt(new Date().toISOString());
 }
@@ -626,6 +633,205 @@ app.get(['/api/GetTagsInRealtime', '/api/v1/GetTagsInRealtime'], async (req, res
   res.setHeader('Content-Type', result.contentType || (result.isValidJson ? 'application/json' : 'text/plain'));
   return res.send(result.rawBody);
 });
+
+// Real-Time Hardware Sync: Ingests live data directly from GAO RFID API into database
+async function syncFromGaoApi(): Promise<{ success: boolean; assetsCount: number; sitesCount: number; message: string }> {
+  try {
+    const [rtResult, histResult] = await Promise.all([
+      executeGaoUpstreamRequest('/api/GetTagsInRealtime'),
+      executeGaoUpstreamRequest('/api/GetHistoryRecords/0/100')
+    ]);
+
+    const realtimeTags: Array<{ TagID: string; Location?: string; Timestamp?: string }> = 
+      rtResult.isValidJson && Array.isArray(rtResult.parsedBody) ? rtResult.parsedBody : [];
+    const historyRecords: Array<{ TagID: string; FirstName?: string; LastName?: string; LocationName?: string; EnterTime?: string; LeaveTime?: string }> = 
+      histResult.isValidJson && Array.isArray(histResult.parsedBody) ? histResult.parsedBody : [];
+
+    const locations = new Set<string>();
+    realtimeTags.forEach(t => t.Location && locations.add(t.Location.trim()));
+    historyRecords.forEach(h => h.LocationName && locations.add(h.LocationName.trim()));
+    if (locations.size === 0) { locations.add('Zone1'); locations.add('Zone2'); }
+
+    const siteId = 'site-gao-rfid';
+    const siteName = 'UHF RFID Tracking Facility';
+
+    const zones = Array.from(locations).map((loc, idx) => ({
+      id: `zone-${loc.toLowerCase().replace(/\s+/g, '-')}`,
+      siteId,
+      name: loc.startsWith('Zone') ? `Antenna ${loc}` : loc,
+      type: 'Work Area' as const,
+      readerIds: [`reader-${loc.toLowerCase().replace(/\s+/g, '-')}`],
+      capacity: 100,
+      currentCount: 0,
+      color: idx === 0 ? '#3b82f6' : '#10b981'
+    }));
+
+    const syncedSite: Site = {
+      id: siteId,
+      name: siteName,
+      code: 'UHF-RFID-01',
+      address: 'RFID Hardware Operation Facility',
+      manager: 'RFID Field Supervisor',
+      activeAssetsCount: 0,
+      totalAssetsValue: 0,
+      coordinates: { lat: 43.7615, lng: -79.4111 },
+      zones
+    };
+
+    const syncedReaders: Reader[] = Array.from(locations).map((loc, idx) => ({
+      id: `reader-${loc.toLowerCase().replace(/\s+/g, '-')}`,
+      name: `UHF RFID Portal — ${loc}`,
+      type: 'Fixed Portal',
+      siteId,
+      siteName,
+      zoneId: `zone-${loc.toLowerCase().replace(/\s+/g, '-')}`,
+      zoneName: loc,
+      status: 'Online',
+      lastHeartbeat: new Date().toISOString(),
+      antennaPowerDbm: 30,
+      ipAddress: `192.168.1.${101 + idx}`,
+      readCountTotal: 15420 + idx * 8200,
+      bufferedEventsCount: 0,
+      firmwareVersion: 'v4.2.0-GAO-UHF'
+    }));
+
+    const assetMap = new Map<string, Asset>();
+
+    historyRecords.forEach((h) => {
+      const tagId = (h.TagID || '').trim();
+      if (!tagId) return;
+      const firstName = (h.FirstName || '').trim();
+      const lastName = (h.LastName || '').trim();
+      const personName = `${firstName} ${lastName}`.trim();
+      const loc = (h.LocationName || 'Zone1').trim();
+      const enterTime = h.EnterTime || new Date().toISOString();
+      const leaveTime = h.LeaveTime;
+
+      const assetName = personName ? `${personName} (UHF Badge)` : `RFID Asset ${tagId.slice(-6)}`;
+      const category: AssetCategory = personName ? 'PPE' : 'Equipment';
+
+      assetMap.set(tagId, {
+        id: `ast-${tagId.toLowerCase()}`,
+        name: assetName,
+        category,
+        subCategory: 'UHF Tracking Device',
+        manufacturer: 'GAO RFID INC.',
+        model: 'GAO-UHF-T90',
+        serialNumber: tagId,
+        tagEpc: tagId,
+        qrCode: `QR-${tagId.slice(-6)}`,
+        status: leaveTime ? 'In Transit' : 'In Zone',
+        siteId,
+        siteName,
+        zoneId: `zone-${loc.toLowerCase().replace(/\s+/g, '-')}`,
+        zoneName: loc,
+        purchaseDate: '2024-01-15',
+        cost: 150,
+        isRental: false,
+        lastSeenAt: leaveTime || enterTime,
+        lastReaderId: `reader-${loc.toLowerCase().replace(/\s+/g, '-')}`,
+        rssi: -48,
+        photoUrl: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=150',
+        condition: 'Good',
+        custodianName: personName || 'Field Personnel'
+      });
+    });
+
+    realtimeTags.forEach(rt => {
+      const tagId = (rt.TagID || '').trim();
+      if (!tagId) return;
+      const loc = (rt.Location || 'Zone1').trim();
+      const ts = rt.Timestamp || new Date().toISOString();
+
+      if (assetMap.has(tagId)) {
+        const existing = assetMap.get(tagId)!;
+        existing.status = 'In Zone';
+        existing.zoneId = `zone-${loc.toLowerCase().replace(/\s+/g, '-')}`;
+        existing.zoneName = loc;
+        existing.lastSeenAt = ts;
+        existing.lastReaderId = `reader-${loc.toLowerCase().replace(/\s+/g, '-')}`;
+      } else {
+        assetMap.set(tagId, {
+          id: `ast-${tagId.toLowerCase()}`,
+          name: `RFID Asset ${tagId.slice(-6)}`,
+          category: 'Equipment' as AssetCategory,
+          subCategory: 'UHF Tracking Device',
+          manufacturer: 'GAO RFID INC.',
+          model: 'GAO-UHF-T90',
+          serialNumber: tagId,
+          tagEpc: tagId,
+          qrCode: `QR-${tagId.slice(-6)}`,
+          status: 'In Zone',
+          siteId,
+          siteName,
+          zoneId: `zone-${loc.toLowerCase().replace(/\s+/g, '-')}`,
+          zoneName: loc,
+          purchaseDate: '2024-01-15',
+          cost: 150,
+          isRental: false,
+          lastSeenAt: ts,
+          lastReaderId: `reader-${loc.toLowerCase().replace(/\s+/g, '-')}`,
+          rssi: -45,
+          photoUrl: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=150',
+          condition: 'Good',
+          custodianName: 'Active Scanner'
+        });
+      }
+    });
+
+    const syncedAssets = Array.from(assetMap.values());
+    syncedSite.activeAssetsCount = syncedAssets.filter(a => a.status === 'In Zone').length;
+    syncedSite.totalAssetsValue = syncedAssets.length * 150;
+    syncedSite.zones.forEach(z => {
+      z.currentCount = syncedAssets.filter(a => a.zoneId === z.id).length;
+    });
+
+    db.sites = [syncedSite];
+    db.readers = syncedReaders;
+    db.assets = syncedAssets;
+
+    const mongoDb = getDb();
+    if (mongoDb && isMongoConnected()) {
+      try {
+        await mongoDb.collection('sites').deleteMany({});
+        await mongoDb.collection('readers').deleteMany({});
+        await mongoDb.collection('assets').deleteMany({});
+
+        await mongoDb.collection('sites').insertOne({ ...syncedSite, _id: siteId as any });
+        if (syncedReaders.length > 0) {
+          await mongoDb.collection('readers').insertMany(syncedReaders.map(r => ({ ...r, _id: r.id as any })));
+        }
+        if (syncedAssets.length > 0) {
+          await mongoDb.collection('assets').insertMany(syncedAssets.map(a => ({ ...a, _id: a.id as any })));
+        }
+      } catch (err: any) {
+        console.warn('[syncFromGaoApi] Mongo persistence error:', err.message);
+      }
+    }
+
+    console.log(`[syncFromGaoApi] Synced ${syncedAssets.length} assets and ${syncedReaders.length} readers directly from live API.`);
+    return {
+      success: true,
+      assetsCount: syncedAssets.length,
+      sitesCount: 1,
+      message: `Successfully synchronized ${syncedAssets.length} assets directly from live API`
+    };
+  } catch (err: any) {
+    console.error('[syncFromGaoApi] Sync failed:', err.message);
+    return { success: false, assetsCount: db.assets.length, sitesCount: db.sites.length, message: err.message };
+  }
+}
+
+// Direct API Sync endpoint for clients
+app.get(['/api/sync/gao', '/api/v1/sync/gao'], async (req, res) => {
+  const result = await syncFromGaoApi();
+  res.json(result);
+});
+
+// Periodic background sync from live RFID hardware API
+setInterval(() => {
+  syncFromGaoApi().catch(err => console.warn('[Background API Sync error]', err.message));
+}, 20000);
 
 // Universal Hardware & Custom API Gateway Server-Side Proxy (Bypasses Browser CORS)
 app.all(['/api/gateway/proxy', '/api/v1/gateway/proxy'], async (req, res) => {
@@ -1104,10 +1310,10 @@ app.post(['/api/assets', '/api/v1/assets', '/assets'], async (req, res) => {
       tagEpc: body.tagEpc || `E2801191A000001000000${Math.floor(100 + Math.random() * 900)}`,
       qrCode: `QR-${Math.floor(1000 + Math.random() * 9000)}`,
       status: body.status || 'In Zone',
-      siteId: body.siteId || db.sites[0]?.id || 'site-01',
-      siteName: db.sites.find(s => s.id === body.siteId)?.name || db.sites[0]?.name || 'Downtown Metro Tower',
-      zoneId: body.zoneId || db.sites[0]?.zones?.[0]?.id || 'z-01',
-      zoneName: db.sites[0]?.zones?.find(z => z.id === body.zoneId)?.name || db.sites[0]?.zones?.[0]?.name || 'Laydown Yard A',
+      siteId: body.siteId || db.sites[0]?.id || '',
+      siteName: db.sites.find(s => s.id === body.siteId)?.name || db.sites[0]?.name || 'Primary Site',
+      zoneId: body.zoneId || db.sites[0]?.zones?.[0]?.id || '',
+      zoneName: db.sites[0]?.zones?.find(z => z.id === body.zoneId)?.name || db.sites[0]?.zones?.[0]?.name || 'Main Zone',
       purchaseDate: body.purchaseDate || new Date().toISOString().split('T')[0],
       cost: Number(body.cost) || 500,
       rentalCostPerDay: body.isRental ? Number(body.rentalCostPerDay) || 50 : 0,
@@ -1173,10 +1379,10 @@ app.post(['/api/assets/batch', '/api/v1/assets/batch', '/assets/batch'], async (
       tagEpc: body.tagEpc || `E2801191A000001000000${Math.floor(100 + Math.random() * 900)}`,
       qrCode: `QR-${Math.floor(1000 + Math.random() * 9000)}`,
       status: body.status || 'In Zone',
-      siteId: siteObj?.id || 'site-01',
-      siteName: siteObj?.name || 'Downtown Metro Tower',
-      zoneId: zoneObj?.id || 'z-01',
-      zoneName: zoneObj?.name || 'Laydown Yard A',
+      siteId: siteObj?.id || db.sites[0]?.id || '',
+      siteName: siteObj?.name || db.sites[0]?.name || 'Primary Site',
+      zoneId: zoneObj?.id || db.sites[0]?.zones?.[0]?.id || '',
+      zoneName: zoneObj?.name || db.sites[0]?.zones?.[0]?.name || 'Main Zone',
       purchaseDate: body.purchaseDate || new Date().toISOString().split('T')[0],
       cost: Number(body.cost) || 400,
       rentalCostPerDay: body.isRental ? Number(body.rentalCostPerDay) || 50 : 0,
@@ -2030,10 +2236,10 @@ app.post(['/api/readers', '/api/v1/readers'], async (req, res) => {
     id: req.body.id || `reader-${Date.now()}`,
     name: req.body.name || 'New RFID Portal',
     type: req.body.type || 'Fixed Portal',
-    siteId: req.body.siteId || db.sites[0]?.id || 'SITE-001',
-    siteName: db.sites.find(s => s.id === req.body.siteId)?.name || db.sites[0]?.name || 'Downtown Metro Tower',
-    zoneId: req.body.zoneId || db.sites[0]?.zones?.[0]?.id || 'z-01',
-    zoneName: db.sites[0]?.zones?.find(z => z.id === req.body.zoneId)?.name || 'Gate Portal',
+    siteId: req.body.siteId || db.sites[0]?.id || '',
+    siteName: db.sites.find(s => s.id === req.body.siteId)?.name || db.sites[0]?.name || 'Primary Site',
+    zoneId: req.body.zoneId || db.sites[0]?.zones?.[0]?.id || '',
+    zoneName: db.sites[0]?.zones?.find(z => z.id === req.body.zoneId)?.name || db.sites[0]?.zones?.[0]?.name || 'Main Zone',
     status: 'Online',
     lastHeartbeat: new Date().toISOString(),
     antennaPowerDbm: Number(req.body.antennaPowerDbm) || 30,
@@ -2278,8 +2484,8 @@ app.get(['/api/inventory', '/api/v1/inventory'], async (req, res) => {
 app.post(['/api/inventory', '/api/v1/inventory'], async (req, res) => {
   const newItem: InventoryItem = {
     id: req.body.id || `inv-${Date.now()}`,
-    siteId: req.body.siteId || db.sites[0]?.id || 'SITE-001',
-    siteName: req.body.siteName || db.sites[0]?.name || 'Downtown Metro Tower',
+    siteId: req.body.siteId || db.sites[0]?.id || '',
+    siteName: req.body.siteName || db.sites[0]?.name || 'Primary Site',
     name: req.body.name || 'New Inventory Item',
     category: req.body.category || 'Supplies',
     quantityOnHand: Number(req.body.quantityOnHand) || 0,
@@ -2791,10 +2997,10 @@ export async function syncAllExternalApiToMongo(options: {
         tagEpc: ext.tagEpc || ext.rfidTag || ext.tagId || `E2801191A000001000000${String(idx + 1).padStart(3, '0')}`,
         qrCode: ext.qrCode || `QR-${1000 + idx}`,
         status: ext.status === 'ACTIVE' ? 'In Zone' : (ext.status === 'MAINTENANCE' ? 'Under Maintenance' : (ext.status || 'In Zone')),
-        siteId: ext.siteId || 'SITE-001',
-        siteName: ext.siteName || ext.location || 'Metro Tower Construction',
-        zoneId: ext.zoneId || 'z-01',
-        zoneName: ext.zoneName || ext.location || 'Foundation Zone A',
+        siteId: ext.siteId || db.sites[0]?.id || '',
+        siteName: ext.siteName || ext.location || db.sites[0]?.name || 'Facility Yard',
+        zoneId: ext.zoneId || db.sites[0]?.zones?.[0]?.id || '',
+        zoneName: ext.zoneName || ext.location || db.sites[0]?.zones?.[0]?.name || 'Active Zone',
         purchaseDate: ext.purchaseDate || new Date().toISOString().split('T')[0],
         cost: Number(ext.cost) || 1200,
         rentalCostPerDay: Number(ext.rentalCostPerDay) || 0,
@@ -2900,10 +3106,10 @@ export async function syncAllExternalApiToMongo(options: {
         id: ext.id || `reader-${101 + idx}`,
         name: ext.name || `RFID Portal Gate ${idx + 1}`,
         type: ext.type || 'Fixed Portal',
-        siteId: ext.siteId || db.sites[0]?.id || 'SITE-001',
-        siteName: ext.siteName || db.sites[0]?.name || 'Metro Tower Construction',
-        zoneId: ext.zoneId || 'z-01',
-        zoneName: ext.zoneName || 'Foundation Zone A',
+        siteId: ext.siteId || db.sites[0]?.id || '',
+        siteName: ext.siteName || db.sites[0]?.name || 'Facility Yard',
+        zoneId: ext.zoneId || db.sites[0]?.zones?.[0]?.id || '',
+        zoneName: ext.zoneName || db.sites[0]?.zones?.[0]?.name || 'Active Zone',
         status: ext.status === 'ACTIVE' || ext.status === 'ONLINE' ? 'Online' : (ext.status || 'Online'),
         lastHeartbeat: ext.lastHeartbeat || new Date().toISOString(),
         antennaPowerDbm: Number(ext.antennaPowerDbm) || 30,
@@ -3002,8 +3208,8 @@ export async function syncAllExternalApiToMongo(options: {
         id: ext.id || `inv-${idx + 1}`,
         name: ext.name || 'Consumable Material',
         category: ext.category || 'Materials',
-        siteId: ext.siteId || 'SITE-001',
-        siteName: ext.siteName || 'Metro Tower Construction',
+        siteId: ext.siteId || db.sites[0]?.id || '',
+        siteName: ext.siteName || db.sites[0]?.name || 'Facility Yard',
         quantityOnHand: Number(ext.quantityOnHand) || Number(ext.quantity) || 50,
         minThreshold: Number(ext.minThreshold) || Number(ext.minStockLevel) || 10,
         unit: ext.unit || 'Units',
@@ -3162,10 +3368,10 @@ export async function syncAllExternalApiToMongo(options: {
         severity: ext.severity || 'CRITICAL',
         assetId: ext.assetId || 'AST-001',
         assetName: ext.assetName || 'Asset',
-        siteId: ext.siteId || 'SITE-001',
-        siteName: ext.siteName || 'Metro Tower Construction',
-        zoneId: ext.zoneId || 'z-01',
-        zoneName: ext.zoneName || 'Foundation Zone A',
+        siteId: ext.siteId || db.sites[0]?.id || '',
+        siteName: ext.siteName || db.sites[0]?.name || 'Facility Yard',
+        zoneId: ext.zoneId || db.sites[0]?.zones?.[0]?.id || '',
+        zoneName: ext.zoneName || db.sites[0]?.zones?.[0]?.name || 'Active Zone',
         triggeredAt: ext.triggeredAt || ext.timestamp || new Date().toISOString(),
         resolved: Boolean(ext.resolved),
         resolvedAt: ext.resolvedAt,
@@ -3218,10 +3424,10 @@ export async function syncAllExternalApiToMongo(options: {
         assetCategory: ext.assetCategory || 'Tools',
         readerId: ext.readerId || 'reader-101',
         readerName: ext.readerName || 'RFID Portal Gate 1',
-        siteId: ext.siteId || 'SITE-001',
-        siteName: ext.siteName || 'Metro Tower Construction',
-        zoneId: ext.zoneId || 'z-01',
-        zoneName: ext.zoneName || 'Foundation Zone A',
+        siteId: ext.siteId || db.sites[0]?.id || '',
+        siteName: ext.siteName || db.sites[0]?.name || 'Facility Yard',
+        zoneId: ext.zoneId || db.sites[0]?.zones?.[0]?.id || '',
+        zoneName: ext.zoneName || db.sites[0]?.zones?.[0]?.name || 'Active Zone',
         rssi: Number(ext.rssi) || -55,
         timestamp: ext.timestamp || new Date().toISOString(),
         eventType: ext.eventType || 'SCAN',

@@ -15,20 +15,30 @@ import {
 } from 'lucide-react';
 
 interface UsersRolesViewProps {
-  users: User[];
+  users?: User[];
   currentUser: User;
-  sites: Site[];
-  onSwitchUserRole: (newRole: UserRole, user?: User) => void;
+  sites?: Site[];
+  onSwitchUserRole?: (newRole: UserRole, user?: User) => void;
+  onSwitchRole?: (newRole: UserRole, user?: User) => void;
 }
 
 export const UsersRolesView: React.FC<UsersRolesViewProps> = ({
   users = [],
   currentUser,
   sites = [],
-  onSwitchUserRole
+  onSwitchUserRole,
+  onSwitchRole
 }) => {
   const safeUsers = users || [];
   const safeSites = sites || [];
+
+  const handleRoleSwitch = (newRole: UserRole, user?: User) => {
+    if (typeof onSwitchUserRole === 'function') {
+      onSwitchUserRole(newRole, user);
+    } else if (typeof onSwitchRole === 'function') {
+      onSwitchRole(newRole, user);
+    }
+  };
   const rolesList: { role: UserRole; title: string; desc: string; sampleName: string }[] = [
     {
       role: 'Administrator',
@@ -125,12 +135,12 @@ export const UsersRolesView: React.FC<UsersRolesViewProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {rolesList.map((item) => {
             const isCurrent = currentUser.role === item.role;
-            const matchedUser = users.find(u => u.role === item.role);
+            const matchedUser = safeUsers.find(u => u.role === item.role);
 
             return (
               <div
                 key={item.role}
-                onClick={() => onSwitchUserRole(item.role, matchedUser)}
+                onClick={() => handleRoleSwitch(item.role, matchedUser)}
                 className={`p-4 rounded-2xl border transition-all cursor-pointer text-left relative ${
                   isCurrent
                     ? 'bg-slate-900 text-white border-slate-900 shadow-md ring-2 ring-blue-500/50'

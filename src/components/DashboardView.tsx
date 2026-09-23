@@ -81,9 +81,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   // Top 8 KPIs required in Section 3
   const totalAssetsCount = safeAssets.length;
-  const activeCount = safeAssets.filter(a => a.status === 'Active' || a.status === 'In Zone').length;
-  const idleCount = safeAssets.filter(a => a.status === 'Idle').length;
-  const maintenanceCount = safeAssets.filter(a => a.status === 'Under Maintenance').length;
+  const inZoneCount = safeAssets.filter(a => a.status === 'In Zone' || a.status === 'Active').length;
+  const checkedOutCount = safeAssets.filter(a => a.status === 'Checked Out').length;
+  const activeCount = inZoneCount + checkedOutCount;
+  const idleCount = safeAssets.filter(a => a.status === 'Idle' || a.status === 'Stationary').length;
+  const maintenanceCount = safeAssets.filter(a => a.status === 'Under Maintenance' || a.status === 'Maintenance').length;
   const inTransitCount = safeAssets.filter(a => a.status === 'In Transit').length;
   const offSiteCount = safeAssets.filter(a => a.status === 'Off-Site' || a.status === 'Missing').length;
   const openAlertsCount = safeAlerts.filter(a => !a.resolved && a.status !== 'Resolved').length;
@@ -100,20 +102,32 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   // Chart data: Status breakdown
   const statusData = [
-    { name: 'Active / On-Site', value: activeCount, color: '#10b981' },
+    { name: 'Active / In Zone', value: inZoneCount, color: '#10b981' },
+    { name: 'Checked Out', value: checkedOutCount, color: '#06b6d4' },
     { name: 'Idle Machinery', value: idleCount, color: '#f59e0b' },
     { name: 'In Transit', value: inTransitCount, color: '#3b82f6' },
     { name: 'In Maintenance', value: maintenanceCount, color: '#8b5cf6' },
     { name: 'Off-Site / Flagged', value: offSiteCount, color: '#f43f5e' }
   ].filter(d => d.value > 0);
 
+  // Helper to test if asset belongs to site
+  const assetBelongsToSite = (asset: Asset, site: Site): boolean => {
+    if (!asset || !site) return false;
+    if (asset.siteId === site.id) return true;
+    if (asset.siteName && site.name && asset.siteName.toLowerCase().trim() === site.name.toLowerCase().trim()) return true;
+    const normAssetSite = (asset.siteId || '').toLowerCase().replace(/[-_]/g, '');
+    const normSite = (site.id || '').toLowerCase().replace(/[-_]/g, '');
+    if (normAssetSite && normSite && (normAssetSite === normSite || normAssetSite.includes(normSite) || normSite.includes(normAssetSite))) return true;
+    return false;
+  };
+
   // Site asset data for chart
   const siteChartData = safeSites.map(s => {
-    const siteAssets = safeAssets.filter(a => a.siteId === s.id);
-    const active = siteAssets.filter(a => a.status === 'Active' || a.status === 'In Zone').length;
-    const idle = siteAssets.filter(a => a.status === 'Idle').length;
+    const siteAssets = safeAssets.filter(a => assetBelongsToSite(a, s));
+    const active = siteAssets.filter(a => a.status === 'Active' || a.status === 'In Zone' || a.status === 'Checked Out').length;
+    const idle = siteAssets.filter(a => a.status === 'Idle' || a.status === 'Stationary').length;
     return {
-      name: s.name.replace('Site ', ''),
+      name: s.name.replace(/Construction|Expansion|Facility/gi, '').replace('Site ', '').trim() || s.name,
       fullName: s.name,
       total: siteAssets.length,
       active,

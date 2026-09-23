@@ -52,7 +52,16 @@ import { RfidView } from './components/RfidView';
 import {
   fetchGaoAssetTrackingData,
   getGaoRealtime,
-  GAO_API_BASE_URL
+  GAO_API_BASE_URL,
+  getSites,
+  getAssets,
+  getUsers,
+  getReaders,
+  getAlerts,
+  getCheckouts,
+  getMaintenance,
+  getInventory,
+  getEvents
 } from './services/api';
 
 import { 
@@ -191,30 +200,175 @@ export default function App() {
 
   const isFetchingRef = useRef<boolean>(false);
 
-  // Data Fetcher: Merges live hardware gateway reads if online
+  // Data Fetcher: Fetches core construction sites, assets, users, hardware, and live hardware reads
   const loadAllData = useCallback(async () => {
     isFetchingRef.current = true;
     setIsLoading(true);
 
     try {
-      const gaoData = await fetchGaoAssetTrackingData();
-      if (gaoData?.assets?.length) {
-        setAssets(prev => {
-          const gaoIds = new Set(gaoData.assets.map((a: Asset) => a.id));
-          const existingWithoutGao = prev.filter(p => !gaoIds.has(p.id));
-          return [...existingWithoutGao, ...gaoData.assets];
+      const [
+        sitesRes,
+        assetsRes,
+        usersRes,
+        readersRes,
+        alertsRes,
+        checkoutsRes,
+        maintRes,
+        invRes,
+        eventsRes,
+        gaoData
+      ] = await Promise.allSettled([
+        getSites(),
+        getAssets(),
+        getUsers(),
+        getReaders(),
+        getAlerts(),
+        getCheckouts(),
+        getMaintenance(),
+        getInventory(),
+        getEvents(),
+        fetchGaoAssetTrackingData()
+      ]);
+
+      let loadedSites: Site[] = [];
+      if (sitesRes.status === 'fulfilled' && Array.isArray(sitesRes.value)) {
+        loadedSites = sitesRes.value;
+      }
+
+      let loadedAssets: Asset[] = [];
+      if (assetsRes.status === 'fulfilled' && Array.isArray(assetsRes.value) && assetsRes.value.length > 0) {
+        loadedAssets = assetsRes.value;
+      }
+
+      // Merge GAO RFID hardware gateway data if active
+      if (gaoData.status === 'fulfilled' && gaoData.value) {
+        if (gaoData.value.sites?.length) {
+          const existingSiteIds = new Set(loadedSites.map(s => s.id));
+          const newSites = gaoData.value.sites.filter(s => !existingSiteIds.has(s.id));
+          loadedSites = [...loadedSites, ...newSites];
+        }
+        if (gaoData.value.assets?.length) {
+          const gaoIds = new Set(gaoData.value.assets.map((a: Asset) => a.id));
+          const existingWithoutGao = loadedAssets.filter(p => !gaoIds.has(p.id));
+          loadedAssets = [...existingWithoutGao, ...gaoData.value.assets];
+        }
+        if (gaoData.value.events?.length) {
+          setReadEvents(gaoData.value.events);
+        }
+        if (gaoData.value.readers?.length) {
+          setReaders(prev => {
+            const existingReaderIds = new Set(prev.map(r => r.id));
+            const newReaders = (gaoData.value?.readers || []).filter(r => !existingReaderIds.has(r.id));
+            return [...prev, ...newReaders];
+          });
+        }
+      }
+
+      // Deduplicate loadedSites by ID
+      const uniqueSitesMap = new Map<string, Site>();
+      loadedSites.forEach((s) => {
+        if (s && s.id) uniqueSitesMap.set(s.id, s);
+      });
+      loadedSites = Array.from(uniqueSitesMap.values());
+
+      // Deduplicate loadedAssets by ID
+      const uniqueAssetsMap = new Map<string, Asset>();
+      loadedAssets.forEach((a) => {
+        if (a && a.id) uniqueAssetsMap.set(a.id, a);
+      });
+      loadedAssets = Array.from(uniqueAssetsMap.values());
+
+      if (loadedSites.length > 0) {
+        setSites(loadedSites);
+        // Build project models linked to sites if not set
+        setProjects(prev => {
+          if (prev.length > 0) return prev;
+          return loadedSites.map((s, idx) => ({
+            id: `proj-${s.id}`,
+            name: `${s.name} Infrastructure`,
+            code: `PRJ-${s.code || idx + 1}`,
+            client: 'General Infrastructure Partners',
+            projectManager: s.manager || 'Site Director',
+            startDate: '2024-01-01',
+            endDate: '2027-12-31',
+            budget: 15000000 + idx * 5000000,
+            status: 'Active',
+            siteIds: [s.id],
+            description: `Active construction and asset telemetry tracking for ${s.name}.`
+          }));
+        });
+        // Build geofence models linked to site zones if not set
+        setGeofences(prev => {
+          if (prev.length > 0) return prev;
+          const built: Geofence[] = [];
+          loadedSites.forEach((s) => {
+            (s.zones || []).forEach((z) => {
+              built.push({
+                id: `geo-${z.id}`,
+                name: `${z.name} Boundary`,
+                siteId: s.id,
+                siteName: s.name,
+                type: (z.type as any) || 'Construction Site',
+                shape: 'polygon',
+                color: z.color || '#3b82f6',
+                rules: {
+                  alertOnExit: true,
+                  alertOnUnauthorizedEntry: true,
+                  restrictedHoursActive: false
+                },
+                active: true,
+                assetCount: z.currentCount || 0
+              });
+            });
+          });
+          return built;
         });
       }
-      if (gaoData?.events?.length) {
-        setReadEvents(gaoData.events);
+
+      if (loadedAssets.length > 0) {
+        setAssets(loadedAssets);
       }
-      if (gaoData?.readers?.length) {
-        setReaders(gaoData.readers);
+
+      if (usersRes.status === 'fulfilled' && Array.isArray(usersRes.value) && usersRes.value.length > 0) {
+        setUsers(usersRes.value);
       }
+
+      if (readersRes.status === 'fulfilled' && Array.isArray(readersRes.value) && readersRes.value.length > 0) {
+        setReaders(prev => {
+          const gaoReaderIds = new Set(prev.map(r => r.id));
+          const newR = readersRes.value.filter(r => !gaoReaderIds.has(r.id));
+          return [...prev, ...newR];
+        });
+      }
+
+      if (alertsRes.status === 'fulfilled' && Array.isArray(alertsRes.value)) {
+        setAlerts(alertsRes.value);
+      }
+
+      if (checkoutsRes.status === 'fulfilled' && Array.isArray(checkoutsRes.value)) {
+        setCheckouts(checkoutsRes.value);
+      }
+
+      if (maintRes.status === 'fulfilled' && Array.isArray(maintRes.value)) {
+        setMaintenanceLogs(maintRes.value);
+      }
+
+      if (invRes.status === 'fulfilled' && Array.isArray(invRes.value)) {
+        setInventory(invRes.value);
+      }
+
+      if (eventsRes.status === 'fulfilled' && Array.isArray(eventsRes.value)) {
+        setReadEvents(prev => {
+          const existingIds = new Set(prev.map(e => e.id));
+          const incoming = eventsRes.value.filter(e => !existingIds.has(e.id));
+          return [...prev, ...incoming].slice(0, 200);
+        });
+      }
+
       setApiError(null);
       setLastSyncedAt(new Date().toLocaleTimeString());
     } catch (err: any) {
-      console.warn('Physical Hardware Gateway status:', err?.message);
+      console.warn('Backend & Hardware Data Fetch Error:', err?.message);
     } finally {
       setIsLoading(false);
       isFetchingRef.current = false;
@@ -225,7 +379,7 @@ export default function App() {
     loadAllData();
   }, [loadAllData]);
 
-  // Polling GAO RFID Real-Time Tag Stream if available
+  // Polling GAO RFID Real-Time Tag Stream directly from API
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
@@ -239,31 +393,52 @@ export default function App() {
             return {
               id: `rt-${tagId}-${Date.now()}-${idx}`,
               epc: tagId,
-              assetId: tagId,
-              assetName: `GAO Tag ${tagId.slice(-6)}`,
-              assetCategory: 'Tools',
-              readerId: 'reader-gao-antenna-1',
-              readerName: `GAO Reader (${loc})`,
-              siteId: 'site-1',
-              siteName: 'Metro High-Rise Project (Tower A)',
+              assetId: `ast-${tagId.toLowerCase()}`,
+              assetName: `RFID Tag ${tagId.slice(-6)}`,
+              assetCategory: 'Equipment',
+              readerId: `reader-${loc.toLowerCase().replace(/\s+/g, '-')}`,
+              readerName: `UHF RFID Portal — ${loc}`,
+              siteId: sites[0]?.id || 'site-gao-rfid',
+              siteName: sites[0]?.name || 'UHF RFID Tracking Facility',
               zoneId: `zone-${loc.toLowerCase().replace(/\s+/g, '-')}`,
               zoneName: loc,
               rssi: -45,
               timestamp: ts,
               eventType: 'SCAN',
-              antennaId: 1
+              antennaId: loc === 'Zone2' ? 2 : 1
             };
           });
 
           setReadEvents(prev => [...newEvents, ...prev].slice(0, 200));
+
+          // Real-time position updates for live assets from API
+          setAssets(prev => {
+            const updated = [...prev];
+            realTimeTags.forEach((rt: any) => {
+              const tagId = String(rt.TagID || rt.tagId || '').trim();
+              const loc = String(rt.Location || rt.location || 'Zone 1').trim();
+              const ts = rt.Timestamp || rt.timestamp || now;
+              const idx = updated.findIndex(a => a.tagEpc === tagId || a.id === `ast-${tagId.toLowerCase()}`);
+              if (idx !== -1) {
+                updated[idx] = {
+                  ...updated[idx],
+                  status: 'In Zone',
+                  zoneId: `zone-${loc.toLowerCase().replace(/\s+/g, '-')}`,
+                  zoneName: loc,
+                  lastSeenAt: ts
+                };
+              }
+            });
+            return updated;
+          });
         }
       } catch (err) {
         // non-blocking
       }
-    }, 15000);
+    }, 10000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [sites]);
 
   // Toast notifications
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -280,12 +455,12 @@ export default function App() {
     } else {
       const newAsset: Asset = {
         id: `ast-${Date.now().toString(36)}`,
-        name: assetData.name || 'New Construction Asset',
-        category: assetData.category || 'Heavy Equipment',
+        name: assetData.name || 'New RFID Asset',
+        category: assetData.category || 'RFID Hardware Asset',
         status: assetData.status || 'Active',
-        siteId: assetData.siteId || 'site-1',
-        siteName: sites.find(s => s.id === assetData.siteId)?.name || 'Metro High-Rise Project',
-        trackingMethod: assetData.trackingMethod || 'GPS',
+        siteId: assetData.siteId || sites[0]?.id || 'site-gao-rfid',
+        siteName: sites.find(s => s.id === assetData.siteId)?.name || sites[0]?.name || 'UHF RFID Tracking Facility',
+        trackingMethod: assetData.trackingMethod || 'RFID',
         tagEpc: assetData.tagEpc || `E280116060${Math.floor(Math.random()*1000000)}`,
         condition: 'Good',
         ...assetData
@@ -768,8 +943,39 @@ export default function App() {
 
           {activeTab === 'users_roles' && (
             <UsersRolesView
+              users={users}
+              sites={sites}
               currentUser={currentUser}
-              onSwitchRole={(r) => setCurrentUser(prev => ({ ...prev, role: r }))}
+              onSwitchUserRole={(newRole, user) => {
+                if (user) {
+                  setCurrentUser(user);
+                  showToast(`Switched persona to ${user.name} (${user.role})`);
+                } else {
+                  const matched = users.find(u => u.role === newRole);
+                  if (matched) {
+                    setCurrentUser(matched);
+                    showToast(`Switched persona to ${matched.name} (${matched.role})`);
+                  } else {
+                    setCurrentUser(prev => ({ ...prev, role: newRole }));
+                    showToast(`Switched role to ${newRole}`);
+                  }
+                }
+              }}
+              onSwitchRole={(r, user) => {
+                if (user) {
+                  setCurrentUser(user);
+                  showToast(`Switched persona to ${user.name} (${user.role})`);
+                } else {
+                  const matched = users.find(u => u.role === r);
+                  if (matched) {
+                    setCurrentUser(matched);
+                    showToast(`Switched persona to ${matched.name} (${matched.role})`);
+                  } else {
+                    setCurrentUser(prev => ({ ...prev, role: r }));
+                    showToast(`Switched role to ${r}`);
+                  }
+                }
+              }}
             />
           )}
 

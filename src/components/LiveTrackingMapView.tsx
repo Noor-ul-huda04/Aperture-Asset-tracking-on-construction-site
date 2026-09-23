@@ -194,7 +194,7 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
   const siteReaders = safeReaders.filter((r) => selectedSiteId === 'ALL' || (currentSite && r.siteId === currentSite.id));
 
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
-  const [mapMode, setMapMode] = useState<'GOOGLE_MAP' | 'OPERATIONS_MAP' | 'SCHEMATIC' | 'RADAR' | 'GRID'>('GOOGLE_MAP');
+  const [mapMode, setMapMode] = useState<'GOOGLE_MAP' | 'OPERATIONS_MAP' | 'SCHEMATIC' | 'RADAR' | 'GRID'>('OPERATIONS_MAP');
   const [mapType, setMapType] = useState<'roadmap' | 'hybrid'>('roadmap');
   const [dashboardMapType, setDashboardMapType] = useState<'streets' | 'satellite'>('streets');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
@@ -355,6 +355,20 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
     const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBtSeel2ngV38yw9LAIyYt0K0xyDfUsxE4';
     let isMounted = true;
 
+    // Timeout detection: if Google Maps hasn't initialized within 3.5s, surface fallback options
+    const timeoutTimer = setTimeout(() => {
+      if (isMounted && !mapLoaded) {
+        setMapError('Google Maps API did not finish loading in this environment. Switch to Operations CAD Map for instant tracking with all pins and geofences.');
+      }
+    }, 3500);
+
+    // Capture global auth failure if key has restricted domains or quota limits
+    (window as any).gm_authFailure = () => {
+      if (isMounted) {
+        setMapError('Google Maps JS API key authorization failed or domain restricted. Switch to the Operations CAD Map.');
+      }
+    };
+
     async function initGoogleMap() {
       try {
         setOptions({
@@ -366,6 +380,7 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
 
         if (!isMounted || !googleMapRef.current) return;
 
+        clearTimeout(timeoutTimer);
         setMapLoaded(true);
         setMapError(null);
 
@@ -536,12 +551,8 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
             const zonePolygonCoords = getZonePolygonCoords(currentSite.coordinates!, zIdx, currentZones.length);
 
             // Compute polygon centroid for label and pin placement
-            const centroidLat = zonePolygonCoords.length > 0
-              ? zonePolygonCoords.reduce((sum, p) => sum + p.lat, 0) / zonePolygonCoords.length
-              : currentSite.coordinates!.lat;
-            const centroidLng = zonePolygonCoords.length > 0
-              ? zonePolygonCoords.reduce((sum, p) => sum + p.lng, 0) / zonePolygonCoords.length
-              : currentSite.coordinates!.lng;
+            const centroidLat = zonePolygonCoords.reduce((sum, p) => sum + p.lat, 0) / zonePolygonCoords.length;
+            const centroidLng = zonePolygonCoords.reduce((sum, p) => sum + p.lng, 0) / zonePolygonCoords.length;
             const zoneCentroid = { lat: centroidLat, lng: centroidLng };
 
             const zonePolygon = new google.maps.Polygon({
@@ -610,7 +621,7 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
               map: mapInstanceRef.current!,
               title: `${zone?.name || 'Zone'} (${zoneAssetCount} assets)`,
               label: {
-                text: `${((zone?.name || 'Zone').split(' ') || ['Zone'])[0] || 'Zone'} [${zoneAssetCount}]`,
+                text: `${(zone?.name || 'Zone').split(' ')[0]} [${zoneAssetCount}]`,
                 color: '#ffffff',
                 fontSize: '10px',
                 fontWeight: 'bold',
@@ -773,6 +784,7 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
 
     return () => {
       isMounted = false;
+      clearTimeout(timeoutTimer);
     };
   }, [
     mapMode,
@@ -801,7 +813,7 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
     trailMarkersRef.current.forEach((m) => m.setMap(null));
     trailMarkersRef.current = [];
 
-    if (!selectedAsset || mapMode !== 'GOOGLE_MAP' || !mapInstanceRef.current) return;
+    if (!selectedAsset) return;
 
     const centerCoords = getSiteCenter(selectedSiteId);
     const assetIdx = Math.max(0, filteredAssets.findIndex((a) => a.id === selectedAsset.id));
@@ -915,8 +927,8 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
                 className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer max-w-[140px] truncate"
               >
                 <option value="ALL" className="bg-slate-900 text-white">All Projects</option>
-                {safeProjects.map((p) => (
-                  <option key={p.id} value={p.id} className="bg-slate-900 text-white">
+                {safeProjects.map((p, pIdx) => (
+                  <option key={`proj-opt-${p.id || pIdx}-${pIdx}`} value={p.id} className="bg-slate-900 text-white">
                     {p.name}
                   </option>
                 ))}
@@ -935,8 +947,8 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
               }}
               className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer max-w-[150px] truncate"
             >
-              {availableSites.map((s) => (
-                <option key={s.id} value={s.id} className="bg-slate-900 text-white">
+              {availableSites.map((s, sIdx) => (
+                <option key={`site-opt-${s.id || sIdx}-${sIdx}`} value={s.id} className="bg-slate-900 text-white">
                   {s.name} ({s.code})
                 </option>
               ))}
@@ -1090,7 +1102,7 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
 
               return (
                 <button
-                  key={zone.id}
+                  key={`zone-filter-btn-${zone.id || zIdx}-${zIdx}`}
                   onClick={() => setSelectedZoneId(isSelected ? null : zone.id)}
                   className={`px-2.5 py-1 rounded-lg border text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                     isSelected
@@ -1167,7 +1179,13 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
             <div className="flex items-center gap-2 font-mono text-xs">
               <span className="text-slate-400">Site:</span>
               <span className="text-white font-bold bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800">
-                {currentSite?.name} ({currentSite?.code})
+                {selectedSiteId === 'ALL'
+                  ? `All Sites (${safeSites.length})`
+                  : currentSite?.name
+                  ? `${currentSite.name} (${currentSite.code || currentSite.id})`
+                  : safeSites[0]
+                  ? `${safeSites[0].name} (${safeSites[0].code})`
+                  : 'All Construction Sites'}
               </span>
               <span className="text-slate-500">|</span>
               <span className="text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
@@ -1191,8 +1209,8 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
                   onChange={(e) => setSelectedCategory(e.target.value)}
                   className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer"
                 >
-                  {categoriesList.map((cat) => (
-                    <option key={cat} value={cat} className="bg-slate-900 text-white">
+                  {categoriesList.map((cat, catIdx) => (
+                    <option key={`cat-opt-${cat}-${catIdx}`} value={cat} className="bg-slate-900 text-white">
                       {cat === 'ALL' ? 'All Categories' : cat}
                     </option>
                   ))}
@@ -1216,11 +1234,32 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
           {/* Google Maps Container */}
           {mapMode === 'GOOGLE_MAP' && (
             <div className="flex-1 w-full h-full min-h-[460px] rounded-xl overflow-hidden relative border border-slate-800">
+              {!mapLoaded && !mapError && (
+                <div className="absolute inset-0 bg-slate-950/85 flex flex-col items-center justify-center p-6 text-center text-xs font-mono space-y-3 z-20">
+                  <RefreshCw className="w-7 h-7 text-cyan-400 animate-spin" />
+                  <p className="text-white font-bold">Connecting to Google Maps Platform...</p>
+                  <p className="text-slate-400 max-w-sm text-[11px]">Loading geospatial tiles & satellite imagery...</p>
+                  <button
+                    onClick={() => setMapMode('OPERATIONS_MAP')}
+                    className="mt-2 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 shadow-lg"
+                  >
+                    <MapPin className="w-3.5 h-3.5 text-amber-300" />
+                    <span>Switch to Operations CAD Map</span>
+                  </button>
+                </div>
+              )}
               {mapError && (
-                <div className="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center p-6 text-center text-xs font-mono space-y-2 z-20">
+                <div className="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center p-6 text-center text-xs font-mono space-y-3 z-20">
                   <AlertTriangle className="w-8 h-8 text-amber-400" />
-                  <p className="text-white font-bold">Google Maps Load Error</p>
-                  <p className="text-slate-400 max-w-md">{mapError}</p>
+                  <p className="text-white font-bold text-sm">Google Maps JS API Notice</p>
+                  <p className="text-slate-400 max-w-md text-[11.5px]">{mapError}</p>
+                  <button
+                    onClick={() => setMapMode('OPERATIONS_MAP')}
+                    className="mt-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-lg transition-all flex items-center gap-2 cursor-pointer"
+                  >
+                    <MapPin className="w-4 h-4 text-amber-300" />
+                    <span>View Operations CAD Map</span>
+                  </button>
                 </div>
               )}
               <div ref={googleMapRef} className="w-full h-full min-h-[460px]" />
@@ -1248,7 +1287,7 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
                   )}
                   {/* Sub-Zone Construction Geofence Polygons */}
                   {showZoneOverlays && (
-                    <>
+                    <g key="zone-overlays-group">
                       {currentZones.map((zone, zIdx) => {
                         const palette = ZONE_COLOR_PALETTE[zIdx % ZONE_COLOR_PALETTE.length];
                         const isSelected = selectedZoneId === zone.id;
@@ -1264,7 +1303,7 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
 
                         return (
                           <polygon
-                            key={zone.id}
+                            key={`zone-poly-${zone.id || zIdx}-${zIdx}`}
                             points={pts}
                             fill={palette.fill}
                             fillOpacity={isSelected ? '0.35' : '0.14'}
@@ -1274,7 +1313,7 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
                           />
                         );
                       })}
-                    </>
+                    </g>
                   )}
                 </svg>
               </div>
@@ -1292,7 +1331,7 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
 
                     return (
                       <div
-                        key={zone.id}
+                        key={`zone-cad-badge-${zone.id || zIdx}-${zIdx}`}
                         className={`bg-slate-950/90 border px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold shadow-sm flex items-center gap-1.5 transition-all ${
                           isSelected ? 'border-white text-white ring-2 ring-blue-500/50' : 'text-slate-300'
                         }`}
@@ -1314,47 +1353,59 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
 
               {/* Interactive Asset Markers Scatter */}
               <div className="absolute inset-0 p-8 flex flex-wrap items-center justify-around overflow-y-auto">
-                {filteredAssets.map((asset) => {
-                  const icon = getMarkerIcon(asset.category || asset.assetType);
-                  const isSelected = selectedAsset?.id === asset.id;
-                  const isMoving = asset.status === 'In Transit' || asset.status === 'Active' || asset.status === 'In Zone';
-                  const isIdle = asset.status === 'Idle';
-                  const isMaint = asset.status === 'Under Maintenance' || asset.status === 'Maintenance';
-
-                  return (
-                    <div
-                      key={asset.id}
-                      onClick={() => {
-                        setSelectedAsset(asset);
-                        if (asset.zoneId) setSelectedZoneId(asset.zoneId);
-                      }}
-                      className="cursor-pointer group flex flex-col items-center transition-all hover:scale-115 relative z-10 m-3"
-                      title={`${asset.name} (${asset.category}) - Click to inspect`}
+                {filteredAssets.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center text-center p-8 z-10 m-auto">
+                    <p className="text-slate-400 text-xs font-mono">No equipment pins matching current filter.</p>
+                    <button
+                      onClick={() => { setSelectedCategory('ALL'); setFilterSearch(''); setSelectedZoneId(null); }}
+                      className="mt-3 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-cyan-300 text-xs font-mono rounded-lg border border-slate-700 cursor-pointer"
                     >
-                      <div className={`w-11 h-11 rounded-2xl flex items-center justify-center text-lg shadow-lg border-2 transition-all ${
-                        isSelected
-                          ? 'bg-blue-600 border-white ring-4 ring-blue-500/50 scale-110 text-white'
-                          : isMaint
-                          ? 'bg-purple-600 border-purple-300 text-white'
-                          : isIdle
-                          ? 'bg-amber-500 border-amber-200 text-white'
-                          : isMoving
-                          ? 'bg-emerald-600 border-emerald-200 text-white'
-                          : 'bg-slate-800 border-slate-600 text-white'
-                      }`}>
-                        <span>{icon}</span>
-                      </div>
+                      Reset All Filters
+                    </button>
+                  </div>
+                ) : (
+                  filteredAssets.map((asset, aIdx) => {
+                    const icon = getMarkerIcon(asset.category || asset.assetType);
+                    const isSelected = selectedAsset?.id === asset.id;
+                    const isMoving = asset.status === 'In Transit' || asset.status === 'Active' || asset.status === 'In Zone';
+                    const isIdle = asset.status === 'Idle';
+                    const isMaint = asset.status === 'Under Maintenance' || asset.status === 'Maintenance';
 
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md mt-1 shadow-md font-mono truncate max-w-[120px] ${
-                        isSelected
-                          ? 'bg-blue-600 text-white border border-blue-400 font-black'
-                          : 'bg-slate-950/90 text-slate-200 border border-slate-800'
-                      }`}>
-                        {asset.name}
-                      </span>
-                    </div>
-                  );
-                })}
+                    return (
+                      <div
+                        key={`op-asset-marker-${asset.id || aIdx}-${aIdx}`}
+                        onClick={() => {
+                          setSelectedAsset(asset);
+                          if (asset.zoneId) setSelectedZoneId(asset.zoneId);
+                        }}
+                        className="cursor-pointer group flex flex-col items-center transition-all hover:scale-115 relative z-10 m-3"
+                        title={`${asset.name} (${asset.category}) - Click to inspect`}
+                      >
+                        <div className={`w-11 h-11 rounded-2xl flex items-center justify-center text-lg shadow-lg border-2 transition-all ${
+                          isSelected
+                            ? 'bg-blue-600 border-white ring-4 ring-blue-500/50 scale-110 text-white'
+                            : isMaint
+                            ? 'bg-purple-600 border-purple-300 text-white'
+                            : isIdle
+                            ? 'bg-amber-500 border-amber-200 text-white'
+                            : isMoving
+                            ? 'bg-emerald-600 border-emerald-200 text-white'
+                            : 'bg-slate-800 border-slate-600 text-white'
+                        }`}>
+                          <span>{icon}</span>
+                        </div>
+
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md mt-1 shadow-md font-mono truncate max-w-[120px] ${
+                          isSelected
+                            ? 'bg-blue-600 text-white border border-blue-400 font-black'
+                            : 'bg-slate-950/90 text-slate-200 border border-slate-800'
+                        }`}>
+                          {asset.name}
+                        </span>
+                      </div>
+                    );
+                  })
+                )}
               </div>
 
               {/* Map Legend Overlay */}
@@ -1381,7 +1432,7 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
 
                 return (
                   <div
-                    key={z.id}
+                    key={`schematic-zone-${z.id || zIdx}-${zIdx}`}
                     onClick={() => setSelectedZoneId(isSelected ? null : z.id)}
                     className={`bg-slate-950/90 border rounded-2xl p-4 transition-all duration-200 cursor-pointer relative overflow-hidden flex flex-col justify-between ${
                       isSelected
@@ -1425,9 +1476,9 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
                         <p className="text-[11px] text-slate-500 font-mono italic">No tags in zone scope</p>
                       ) : (
                         <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-                          {zoneAssets.slice(0, 6).map((ast) => (
+                          {zoneAssets.slice(0, 6).map((ast, astIdx) => (
                             <button
-                              key={ast.id}
+                              key={`schematic-tag-${ast.id || astIdx}-${astIdx}`}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedAsset(ast);
@@ -1468,7 +1519,7 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
 
                   return (
                     <button
-                      key={ast.id}
+                      key={`radar-pin-${ast.id || idx}-${idx}`}
                       onClick={() => setSelectedAsset(ast)}
                       style={{ transform: `translate(${x}px, ${y}px)` }}
                       className="absolute p-1.5 bg-cyan-500/20 hover:bg-cyan-500/40 border border-cyan-400 text-cyan-300 rounded-full shadow-md transition-all cursor-pointer group"
@@ -1490,9 +1541,9 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
           {/* Grid View */}
           {mapMode === 'GRID' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 flex-1 z-10">
-              {filteredAssets.map((ast) => (
+              {filteredAssets.map((ast, astIdx) => (
                 <div
-                  key={ast.id}
+                  key={`grid-cell-${ast.id || astIdx}-${astIdx}`}
                   onClick={() => setSelectedAsset(ast)}
                   className="bg-slate-950 border border-slate-800 hover:border-blue-500 rounded-xl p-3 text-xs font-mono space-y-2 cursor-pointer transition-all"
                 >
@@ -1600,7 +1651,7 @@ export const LiveTrackingMapView: React.FC<LiveTrackingMapViewProps> = ({
                       Math.max(0, filteredAssets.findIndex((a) => a.id === selectedAsset.id))
                     ).map((stepItem, sIdx, sArr) => (
                       <div
-                        key={stepItem.step}
+                        key={`breadcrumb-step-${stepItem.step || sIdx}-${sIdx}`}
                         className={`flex items-center justify-between p-1.5 rounded-lg border text-[10.5px] font-mono transition-all ${
                           stepItem.step === sArr.length
                             ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'

@@ -24,14 +24,10 @@ export const GAO_API_BASE_URL = 'https://www.i360services.com/peopletrackinguhf'
 
 export function getActiveApiBaseUrl(): string {
   const cfg = getHardwareApiConfig();
-  if (cfg.baseUrl && cfg.baseUrl.trim()) {
+  if (cfg.mode === 'CUSTOM_REST' && cfg.baseUrl && cfg.baseUrl.trim()) {
     return cfg.baseUrl.replace(/\/$/, '');
   }
-  const envUrl = import.meta.env?.VITE_GAO_API_BASE_URL || import.meta.env?.GAO_API_BASE_URL;
-  if (envUrl && typeof envUrl === 'string' && envUrl.trim()) {
-    return envUrl.replace(/\/$/, '');
-  }
-  return GAO_API_BASE_URL;
+  return '';
 }
 
 export const API_BASE_URL = getActiveApiBaseUrl();
@@ -827,36 +823,38 @@ export async function fetchGaoAssetTrackingData(): Promise<{
   });
 
   const assets = Array.from(assetMap.values());
-  const sites: Site[] = Array.from(locationsSet).map((locName, idx) => ({
-    id: `site-${locName.toLowerCase().replace(/\s+/g, '-')}`,
-    name: locName || 'GAO Tracking Facility',
-    code: `GAO-${idx + 1}`,
-    address: 'GAO RFID UHF Coverage Field',
-    manager: 'GAO Field Supervisor',
-    activeAssetsCount: assets.filter(a => a.zoneName === locName).length,
-    totalAssetsValue: assets.filter(a => a.zoneName === locName).length * 120,
-    coordinates: { lat: 43.7615, lng: -79.4111 },
-    zones: [
-      {
+  const gaoSiteId = 'site-gao-facility';
+  const gaoSiteName = 'GAO RFID UHF Facility';
+  const sites: Site[] = locationsSet.size > 0 ? [
+    {
+      id: gaoSiteId,
+      name: gaoSiteName,
+      code: 'GAO-UHF',
+      address: 'GAO RFID Hardware Testing Facility',
+      manager: 'GAO Field Supervisor',
+      activeAssetsCount: assets.filter(a => a.status === 'In Zone' || a.status === 'Active').length,
+      totalAssetsValue: assets.length * 120,
+      coordinates: { lat: 43.7615, lng: -79.4111 },
+      zones: Array.from(locationsSet).map((locName, idx) => ({
         id: `zone-${locName.toLowerCase().replace(/\s+/g, '-')}`,
-        siteId: `site-${locName.toLowerCase().replace(/\s+/g, '-')}`,
-        name: locName,
+        siteId: gaoSiteId,
+        name: locName.startsWith('Zone') ? `Antenna ${locName}` : locName,
         type: 'Work Area',
         readerIds: ['reader-gao-antenna-1', 'reader-gao-antenna-2'],
         capacity: 100,
         currentCount: assets.filter(a => a.zoneName === locName).length,
-        color: '#2563eb'
-      }
-    ]
-  }));
+        color: idx === 0 ? '#3b82f6' : '#10b981'
+      }))
+    }
+  ] : [];
 
   // If real tags arrived with locations, build site/reader records for them; otherwise keep empty
   const readers: Reader[] = sites.length > 0 ? [
     {
       id: 'reader-gao-antenna-1',
-      siteId: sites[0]?.id,
-      siteName: sites[0]?.name,
-      name: `UHF Gateway — ${sites[0]?.name}`,
+      siteId: gaoSiteId,
+      siteName: gaoSiteName,
+      name: 'UHF Dual-Antenna Gateway',
       type: 'Fixed Portal',
       ipAddress: 'API Connected',
       zoneId: sites[0]?.zones?.[0]?.id || 'zone-1',

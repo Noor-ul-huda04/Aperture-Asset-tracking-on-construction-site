@@ -45,7 +45,7 @@ interface HeaderProps {
   onOpenHardwareDrawer: () => void;
   onOpenMobileView: () => void;
   currentUser: User;
-  onSwitchUserRole: (user: User) => void;
+  onSwitchUserRole?: (user: User) => void;
   allUsers: User[];
   isStreaming: boolean;
   offlineMode: boolean;
@@ -169,12 +169,13 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* Middle: Global Search Bar (Section 3 Requirement) */}
-        <div ref={searchRef} className="relative flex-1 max-w-md hidden md:block">
+        <div ref={searchRef} className="relative flex-1 min-w-[200px] max-w-md hidden md:block">
           <div className="relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
-              placeholder="Search assets, equipment, RFID tags, serials, sites..."
+              placeholder="Search assets..."
+              aria-label="Search assets"
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
@@ -357,7 +358,7 @@ export const Header: React.FC<HeaderProps> = ({
                     <button
                       key={u.id}
                       onClick={() => {
-                        onSwitchUserRole(u);
+                        onSwitchUserRole?.(u);
                         setUserDropdownOpen(false);
                       }}
                       className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs transition-colors ${
